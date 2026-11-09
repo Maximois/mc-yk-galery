@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0e11">
+  <title>MC Digilibrary</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <div class="header-left">
+        <button id="btn-back" class="btn-icon hidden" title="Volver a biblioteca">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M12 19l-7-7 7-7"></path></svg>
+        </button>
+        <h1 id="title">Biblioteca Digital</h1>
+      </div>
+      <div class="header-right" id="header-actions"></div>
+    </header>
+    <main id="main">
+      <!-- Vista Biblioteca -->
+      <section id="view-library" class="view active">
+        <div class="toolbar">
+          <button id="btn-add-book" class="btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Añadir Libro / Documento
+          </button>
+          <div class="search-wrap">
+            <input type="search" id="search-input" placeholder="Buscar por título, autor o formato...">
+          </div>
+        </div>
+        <div id="library-empty" class="empty hidden">
+          <p>No hay libros en tu biblioteca aún.</p>
+          <small>Toca "Añadir Libro / Documento" para importar PDF, EPUB, DOCX, TXT o MD.</small>
+        </div>
+        <div id="library-grid" class="library-grid"></div>
+      </section>
+
+      <!-- Vista Detalles del Libro -->
+      <section id="view-details" class="view">
+        <div id="book-details" class="book-details"></div>
+        <div class="details-actions">
+          <button id="btn-open-reader" class="btn-primary btn-lg">Abrir Lector</button>
+          <button id="btn-open-notebook" class="btn-secondary">Abrir Mi Cuaderno</button>
+          <button id="btn-remove-book" class="btn-danger">Eliminar de Biblioteca</button>
+        </div>
+      </section>
+
+      <!-- Vista Lector -->
+      <section id="view-reader" class="view">
+        <div id="reader-toolbar" class="reader-toolbar hidden">
+          <div class="reader-info">
+            <span id="page-info">Página 1 de 1</span>
+            <div class="progress-wrap">
+              <input type="range" id="page-slider" min="1" max="1" value="1" step="1">
+            </div>
+          </div>
+        </div>
+        <div id="reader-host" class="reader-host"></div>
+        <div id="selection-menu" class="selection-menu hidden">
+          <button data-action="highlight" class="menu-btn" title="Resaltar">Resaltar</button>
+          <button data-action="note" class="menu-btn" title="Añadir Nota">Añadir Nota</button>
+          <button data-action="copy" class="menu-btn" title="Copiar">Copiar</button>
+          <button data-action="clear" class="menu-btn" title="Cerrar">✕</button>
+        </div>
+        <div id="note-modal" class="modal hidden">
+          <div class="modal-content">
+            <h3>Añadir Nota</h3>
+            <p class="selection-preview" id="note-selection"></p>
+            <textarea id="note-text" rows="4" placeholder="Escribe tu reflexión o comentario..."></textarea>
+            <div class="modal-actions">
+              <button id="note-cancel" class="btn-secondary">Cancelar</button>
+              <button id="note-save" class="btn-primary">Guardar Nota</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Vista Cuaderno (Notebook) -->
+      <section id="view-notebook" class="view">
+        <div id="notebook-header" class="notebook-header">
+          <h2 id="notebook-title">Mi Cuaderno</h2>
+          <button id="btn-export-notes" class="btn-secondary">Exportar Resumen (TXT/MD)</button>
+        </div>
+        <div id="notebook-empty" class="empty hidden">
+          <p>Este libro aún no tiene anotaciones.</p>
+          <small>Selecciona texto en el lector y añade resaltados o notas para empezar.</small>
+        </div>
+        <div id="notebook-list" class="notebook-list"></div>
+      </section>
+    </main>
+  </div>
+  <input type="file" id="file-input" accept=".pdf,.epub,.docx,.doc,.odt,.txt,.md,.rtf,.html,.htm" multiple hidden>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Web build output
+dist/
+
+# Android and Gradle build output
+.gradle/
+**/build/
+local.properties
+
+# IDE and operating system files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local environment and signing credentials
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+android/app/google-services.json
+
+# Packaged Android artifacts
+*.apk
+*.aab

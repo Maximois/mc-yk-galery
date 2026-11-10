@@ -36,6 +36,8 @@
       if (r.highlight && HEX.test(r.highlight)) props.push(`fo:background-color="${r.highlight}"`);
       if (r.font) props.push(`style:font-name="${X(r.font)}" fo:font-family="${X(r.font)}"`);
       if (r.size) props.push(`fo:font-size="${Number(r.size)}pt"`);
+      if (r.vert === 'sup') props.push('style:text-position="super 58%"');
+      else if (r.vert === 'sub') props.push('style:text-position="sub 58%"');
       if (!props.length) return '';
       const key = props.join(' ');
       if (!autoText.has(key)) autoText.set(key, 'T' + (++tcount));

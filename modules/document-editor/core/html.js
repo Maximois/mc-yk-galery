@@ -52,6 +52,8 @@
       if (run.italic === true) html = `<em>${html}</em>`;
       if (run.underline === true) html = `<u>${html}</u>`;
       if (run.strike === true) html = `<s>${html}</s>`;
+      if (run.vert === 'sup') html = `<sup>${html}</sup>`;
+      else if (run.vert === 'sub') html = `<sub>${html}</sub>`;
       const styles = [];
       // `false` explicito: el tramo quita lo que el bloque trae por defecto
       // (una palabra sin negrita dentro de un titulo).

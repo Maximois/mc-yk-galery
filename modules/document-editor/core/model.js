@@ -123,6 +123,7 @@
     }
     if (run.color && HEX_RE.test(String(run.color))) out.color = String(run.color);
     if (run.highlight && HEX_RE.test(String(run.highlight))) out.highlight = String(run.highlight);
+    if (run.vert === 'sup' || run.vert === 'sub') out.vert = run.vert;
     if (run.font && FONT_RE.test(String(run.font).trim())) out.font = String(run.font).trim();
     if (run.size != null) out.size = clampInt(run.size, 4, 96, null);
     if (run.link && isSafeLink(run.link)) out.link = String(run.link).trim();
@@ -144,7 +145,7 @@
       underline: block.underline === true,
       strike: false
     };
-    const keys = ['bold', 'italic', 'underline', 'strike', 'color', 'highlight', 'font', 'size', 'link', 'note', 'comment', 'ins', 'del'];
+    const keys = ['bold', 'italic', 'underline', 'strike', 'color', 'highlight', 'font', 'size', 'vert', 'link', 'note', 'comment', 'ins', 'del'];
     const out = [];
     for (const run of block.runs) {
       const next = Object.assign({}, run);
@@ -168,7 +169,7 @@
   // texto (alguien edito el texto sin pasar por el formato), se descartan.
   const FORMAT_KEYS = ['bold', 'italic', 'underline', 'strike'];
   function runsHaveFormat(runs) {
-    return runs.some(r => FORMAT_KEYS.some(k => r[k] === true) || r.color || r.highlight || r.font || r.size || r.link || r.note || r.comment || r.ins || r.del);
+    return runs.some(r => FORMAT_KEYS.some(k => r[k] === true) || r.color || r.highlight || r.font || r.size || r.vert || r.link || r.note || r.comment || r.ins || r.del);
   }
   function richRunsFor(rawRuns, text, trim) {
     if (!Array.isArray(rawRuns)) return null;

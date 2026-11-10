@@ -69,7 +69,7 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
 
   /**
    * <w:rPr> en el orden que exige el esquema:
-   * rFonts, b, bCs, i, iCs, strike, color, sz, szCs, u, shd.
+   * rFonts, b, bCs, i, iCs, strike, color, sz, szCs, u, shd, vertAlign.
    * Los `false` explicitos se escriben con w:val="0" para anular el estilo.
    */
   function runProps(props) {
@@ -94,6 +94,8 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
     if (props.underline === true) out += '<w:u w:val="single"/>';
     else if (props.underline === false) out += '<w:u w:val="none"/>';
     if (props.highlight) out += `<w:shd w:val="clear" w:color="auto" w:fill="${X(String(props.highlight).replace('#', '').slice(0, 6).toUpperCase())}"/>`;
+    if (props.vert === 'sup') out += '<w:vertAlign w:val="superscript"/>';
+    else if (props.vert === 'sub') out += '<w:vertAlign w:val="subscript"/>';
     out += '</w:rPr>';
     return out;
   }
@@ -750,14 +752,21 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
     return out;
   }
 
-  /**
-   * docToDocxParts(doc, opts) -> { parts: [{name, data}], warnings: [] }
-   * No devuelve bytes: el ZIP lo arma el llamador (core/zip.js), asi el
-   * mismo codigo sirve para el proceso main y para el renderer.
-   */
-  function docToDocxParts(doc, opts) {
-    const o = opts || {};
-    const warnings = (o.warnings || []).slice();
+  /** <w:footnote|endnote> de las notas del ctx; ids desde off+1 (para sumarlas a un archivo que ya tiene notas). */
+  function noteItems(ctx, off) {
+    const K = ctx.endnotes ? 'endnote' : 'footnote';
+    return ctx.notes.map((t, i) => `<w:${K} w:id="${off + i + 1}"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:${K}Ref/></w:r><w:r><w:t xml:space="preserve"> ${X(t)}</w:t></w:r></w:p></w:${K}>`).join('');
+  }
+  function commentItems(ctx, off) {
+    return ctx.comments.map((t, i) => {
+      const hm = /^\[([^|\]]*)\|([^\]]*)\]/.exec(t);
+      const who = (hm && hm[1].trim()) || 'Autor';
+      const when = hm && /^\d{4}-\d\d-\d\dT[\d:]+Z?$/.test(hm[2]) ? ` w:date="${X(hm[2].endsWith('Z') ? hm[2] : hm[2] + 'Z')}"` : '';
+      return `<w:comment w:id="${off + i}" w:author="${X(who)}"${when} w:initials="${X(who.slice(0, 2).toUpperCase())}"><w:p><w:r><w:t xml:space="preserve">${X(t)}</w:t></w:r></w:p></w:comment>`;
+    }).join('');
+  }
+
+  function makeCtx(doc) {
     const page = Object.assign({}, model.PAGE.A4, doc.page || {});
     const mg = model.margins(page);
     const media = [];
@@ -805,23 +814,41 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
       }
     };
 
-    const body = [];
-    for (const block of doc.blocks || []) {
-      if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' ||
-          block.type === 'code' || block.type === 'pagebreak' || block.type === 'hr') {
-        body.push(emitParagraph(block, ctx));
-      } else if (block.type === 'list') {
-        body.push(emitList(block, ctx));
-      } else if (block.type === 'toc') {
-        body.push(emitToc(block, doc));
-      } else if (block.type === 'table') {
-        body.push(emitTable(block, ctx));
-      } else if (block.type === 'image') {
-        const xml = emitImage(block, ctx);
-        if (xml) body.push(xml);
-        else warnings.push('una imagen fue descartada: formato no soportado');
-      }
+    ctx.doc = doc;
+    return ctx;
+  }
+
+  /** XML de un bloque del modelo ('' si no se puede escribir). Compartido con el guardado por parches. */
+  function emitBlock(block, ctx, warnings) {
+    const doc = ctx.doc;
+    if (block.type === 'heading' || block.type === 'paragraph' || block.type === 'quote' ||
+        block.type === 'code' || block.type === 'pagebreak' || block.type === 'hr') return emitParagraph(block, ctx);
+    if (block.type === 'list') return emitList(block, ctx);
+    if (block.type === 'toc') return emitToc(block, doc);
+    if (block.type === 'table') return emitTable(block, ctx);
+    if (block.type === 'image') {
+      const x = emitImage(block, ctx);
+      if (!x && warnings) warnings.push('una imagen fue descartada: formato no soportado');
+      return x;
     }
+    return '';
+  }
+
+  /**
+   * docToDocxParts(doc, opts) -> { parts: [{name, data}], warnings: [] }
+   * No devuelve bytes: el ZIP lo arma el llamador (core/zip.js), asi el
+   * mismo codigo sirve para el proceso main y para el renderer.
+   */
+  function docToDocxParts(doc, opts) {
+    const o = opts || {};
+    const warnings = (o.warnings || []).slice();
+    const ctx = makeCtx(doc);
+    const page = Object.assign({}, model.PAGE.A4, doc.page || {});
+    const mg = model.margins(page);
+    const media = ctx.media;
+
+    const body = [];
+    for (const block of doc.blocks || []) { const x = emitBlock(block, ctx, warnings); if (x) body.push(x); }
 
     const hf = headerFooterParts(page);
     ctx.headerFooter = hf;
@@ -855,19 +882,14 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
     if (ctx.notes.length) {
       const para = (t, extra) => `<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${extra || ''}<w:r><w:t xml:space="preserve">${X(t)}</w:t></w:r></w:p>`;
       const K = ctx.endnotes ? 'endnote' : 'footnote';
-      const fn = ctx.notes.map((t, i) => `<w:${K} w:id="${i + 1}"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:${K}Ref/></w:r><w:r><w:t xml:space="preserve"> ${X(t)}</w:t></w:r></w:p></w:${K}>`).join('');
+      const fn = noteItems(ctx, 0);
       parts.push({ name: `word/${K}s.xml`, data: XML_HEAD + `<w:${K}s ${NS}>` +
         `<w:${K} w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:separator/></w:r></w:p></w:${K}>` +
         `<w:${K} w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:${K}>` +
         fn + `</w:${K}s>` });
     }
     if (ctx.comments.length) {
-      const cm = ctx.comments.map((t, i) => {
-        const hm = /^\[([^|\]]*)\|([^\]]*)\]/.exec(t);
-        const who = (hm && hm[1].trim()) || 'Autor';
-        const when = hm && /^\d{4}-\d\d-\d\dT[\d:]+Z?$/.test(hm[2]) ? ` w:date="${X(hm[2].endsWith('Z') ? hm[2] : hm[2] + 'Z')}"` : '';
-        return `<w:comment w:id="${i}" w:author="${X(who)}"${when} w:initials="${X(who.slice(0, 2).toUpperCase())}"><w:p><w:r><w:t xml:space="preserve">${X(t)}</w:t></w:r></w:p></w:comment>`;
-      }).join('');
+      const cm = commentItems(ctx, 0);
       parts.push({ name: 'word/comments.xml', data: XML_HEAD + `<w:comments ${NS}>${cm}</w:comments>` });
     }
     if (hf.header) parts.push({ name: 'word/header1.xml', data: hf.header });
@@ -892,5 +914,5 @@ const CALLOUT_COLORS = { info: ['#EAF2FF', '#3B82F6'], warn: ['#FFF6DD', '#F59E0
     return new Uint8Array(0);
   }
 
-  return { docToDocxParts, emitParagraph, emitTable, runProps, paraProps, styles, numbering, theme, fontTable, base64ToBytes, NS, XML_HEAD };
+  return { docToDocxParts, noteItems, commentItems, makeCtx, emitBlock, headerFooterParts, contentTypes, emitParagraph, emitTable, runProps, paraProps, styles, numbering, theme, fontTable, base64ToBytes, NS, XML_HEAD };
 });

@@ -172,6 +172,11 @@ const CALLOUT_FILLS = { info: 'EAF2FF', warn: 'FFF6DD', ok: 'E7F7EC', error: 'FD
     }
     const strike = xml.find(rPr, 'strike');
     if (strike) props.strike = xml.attr(strike, 'val') !== '0' && xml.attr(strike, 'val') !== 'false';
+    const va = xml.find(rPr, 'vertAlign');
+    if (va) {
+      const v = xml.attr(va, 'val');
+      if (v === 'superscript') props.vert = 'sup'; else if (v === 'subscript') props.vert = 'sub';
+    }
     // Resaltado: w:shd con relleno, o w:highlight (paleta fija de Word).
     const shd = xml.find(rPr, 'shd');
     const fill = shd && xml.attr(shd, 'fill');
@@ -193,7 +198,7 @@ const CALLOUT_FILLS = { info: 'EAF2FF', warn: 'FFF6DD', ok: 'E7F7EC', error: 'FD
 
   function propsKey(p) {
     const flag = (v, c) => (v === true ? c : v === false ? '-' + c : '');
-    return [flag(p.bold, 'b'), flag(p.italic, 'i'), flag(p.underline, 'u'), p.strike ? 's' : '', p.color || '', p.highlight || '', p.font || '', p.size || '', p.link || '', p.note || '', p.comment || '', p.ins || '', p.del || ''].join('|');
+    return [flag(p.bold, 'b'), flag(p.italic, 'i'), flag(p.underline, 'u'), p.strike ? 's' : '', p.color || '', p.highlight || '', p.font || '', p.size || '', p.vert || '', p.link || '', p.note || '', p.comment || '', p.ins || '', p.del || ''].join('|');
   }
 
   /**
@@ -532,7 +537,7 @@ const merged = texts.map(t => {
     // Tachado, resaltado y fuente solo existen como formato de tramo: un
     // parrafo uniforme que los lleve tambien se guarda como runs.
     const first = usable[0];
-    const needsRuns = distinct.size > 1 || first.strike || first.highlight || first.font || first.link || first.note || first.comment || first.ins || first.del;
+    const needsRuns = distinct.size > 1 || first.strike || first.highlight || first.vert || first.font || first.link || first.note || first.comment || first.ins || first.del;
     if (needsRuns) {
       blocks.push(Object.assign({}, base, {
         type: 'paragraph',
@@ -543,6 +548,7 @@ const merged = texts.map(t => {
             else if (m[key] === false) run[key] = false;
           }
           if (m.strike) run.strike = true;
+          if (m.vert) run.vert = m.vert;
           if (m.color) run.color = m.color;
           if (m.highlight) run.highlight = m.highlight;
           if (m.font) run.font = m.font;
@@ -585,6 +591,7 @@ const merged = texts.map(t => {
       const run = { text: String(r.text).replace(/\u00a0/g, ' ').replace(/\n+/g, ' ') };
       for (const key of ['bold', 'italic', 'underline']) if (m[key] === true) run[key] = true;
       if (m.strike) run.strike = true;
+      if (m.vert) run.vert = m.vert;
       if (m.color) run.color = m.color;
       if (m.highlight) run.highlight = m.highlight;
       if (m.font) run.font = m.font;
@@ -600,7 +607,7 @@ const merged = texts.map(t => {
       }
       return run;
     });
-    return texts.some(r => r.bold || r.italic || r.underline || r.strike || r.color || r.highlight || r.font || r.size || r.link || r.note || r.comment || r.ins || r.del) ? texts : null;
+    return texts.some(r => r.bold || r.italic || r.underline || r.strike || r.vert || r.color || r.highlight || r.font || r.size || r.link || r.note || r.comment || r.ins || r.del) ? texts : null;
   }
 
   function tableBlocks(tbl, ctx) {
@@ -773,27 +780,31 @@ const merged = texts.map(t => {
 
     const blocks = [];
     let listBuffer = null;
+    // Origen de cada bloque: rango de hijos de w:body de donde salió (para guardar parchando el original).
+    const ranges = []; let childIdx = -1; let curChild = -1; let tocRange = null;
+    const pushB = (b, a, bb) => { blocks.push(b); const r = { a, b: bb }; ranges.push(r); return r; };
 
     const flushList = () => {
       if (listBuffer && listBuffer.items.length) {
-        const { items, itemRuns, itemLevels, ordered, level, ...rest } = listBuffer;
+        const { items, itemRuns, itemLevels, ordered, level, a: srcA, b: srcB, ...rest } = listBuffer;
         const extra = itemRuns.some(Boolean) ? { itemRuns } : {};
         if (itemLevels && itemLevels.some((l) => l > 0)) extra.itemLevels = itemLevels;
-        blocks.push(Object.assign({ type: 'list', items, ordered, level }, extra, rest));
+        pushB(Object.assign({ type: 'list', items, ordered, level }, extra, rest), srcA, srcB);
       }
       listBuffer = null;
     };
 
     const emit = (list) => {
       for (const b of list) {
-        if (b.type === 'pagebreak') { flushList(); blocks.push(b); continue; }
-        blocks.push(b);
+        if (b.type === 'pagebreak') { flushList(); pushB(b, curChild, curChild); continue; }
+        pushB(b, curChild, curChild);
       }
     };
 
-    const walkBody = (node) => {
+    const walkBody = (node, top) => {
       for (const child of node.children) {
         if (!xml.isElement(child)) continue;
+        if (top) curChild = ++childIdx;
         const name = child.local;
         if (name === 'p') {
           // Campo TOC: se lee como un bloque 'toc' y se saltan sus entradas.
@@ -804,13 +815,13 @@ const merged = texts.map(t => {
             flushList();
             const lv = /\\o\s+"?\d-(\d)/.exec(instr);
             const cap = /\\c\s+"?(Figura|Figure|Tabla|Table)"?/i.exec(instr);
-            blocks.push(cap ? { type: 'toc', levels: 3, kind: /^(tabla|table)/i.test(cap[1]) ? 'table' : 'figure' } : { type: 'toc', levels: lv ? Number(lv[1]) : 3 });
+            tocRange = pushB(cap ? { type: 'toc', levels: 3, kind: /^(tabla|table)/i.test(cap[1]) ? 'table' : 'figure' } : { type: 'toc', levels: lv ? Number(lv[1]) : 3 }, curChild, curChild);
             ctx.tocDepth = fldBegins - fldEnds;
             ctx.tocSkip = ctx.tocDepth > 0;
             continue;
           }
           if (ctx.tocSkip) {
-            ctx.tocDepth += fldBegins - fldEnds;
+            ctx.tocDepth += fldBegins - fldEnds; if (tocRange) tocRange.b = curChild;
             if (ctx.tocDepth <= 0) ctx.tocSkip = false;
             continue;
           }
@@ -832,10 +843,11 @@ if (info.list) {
             flushList();
             // Los items son cadenas planas: el formato del estilo se guarda a
             // nivel de bloque, que es lo unico que el modelo puede representar.
-            listBuffer = { items: [], itemRuns: [], itemLevels: [], ordered, level: info.level || 0 };
+            listBuffer = { items: [], itemRuns: [], itemLevels: [], ordered, level: info.level || 0, a: curChild, b: curChild };
             Object.assign(listBuffer, typedProps(styleOf(info.style, ctx.styles)));
             if (info.align) listBuffer.align = info.align;
           }
+            listBuffer.b = curChild;
             if (text) { listBuffer.items.push(text); listBuffer.itemRuns.push(inlineModelRuns(runs)); listBuffer.itemLevels.push(Math.max(0, Math.min(2, (info.level || 0) - (listBuffer.level || 0)))); }
             if (pageBreakAfter) flushList();
             continue;
@@ -924,8 +936,10 @@ if (info.list) {
       }
     };
 
-    walkBody(body);
+    walkBody(body, true);
     flushList();
+    const srcMap = Object.create(null);
+    blocks.forEach((b, i) => { if (!b.id) b.id = 'dx' + i; srcMap[b.id] = ranges[i]; });
 
     const meta = readCoreProps(entries);
     const doc = model.createDoc({
@@ -951,7 +965,7 @@ if (info.list) {
       doc.title = model.deriveTitle(doc);
       doc.hash = model.hashDoc(doc);
     }
-    return { doc, warnings };
+    return { doc, warnings, srcMap, childCount: childIdx + 1, pageSrc: JSON.parse(JSON.stringify(doc.page || null)) };
   }
 
   // ------------------------------------------------------------- estilos

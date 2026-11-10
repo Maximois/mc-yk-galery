@@ -19,7 +19,9 @@
 
 (function (root, factory) {
   const mod = factory({
-    model: (typeof require === 'function' && typeof module === 'object') ? require('./model.js') : (root.MCDoc && root.MCDoc.model)
+    model: (typeof require === 'function' && typeof module === 'object') ? require('./model.js') : (root.MCDoc && root.MCDoc.model),
+    docBinary: (typeof require === 'function' && typeof module === 'object') ? require('./doc-binary.js') : (root.MCDoc && root.MCDoc.docBinary),
+    rtfRead: (typeof require === 'function' && typeof module === 'object') ? require('./rtf-read.js') : (root.MCDoc && root.MCDoc.rtfRead)
   });
   if (typeof module === 'object' && module.exports) module.exports = mod;
   if (typeof window !== 'undefined') {
@@ -28,6 +30,8 @@
   }
 })(this, function (deps) {
   const model = deps.model;
+  const rtfRead = deps.rtfRead;
+  const docBinary = deps.docBinary;
 
   const SIG = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
   const FREESECT = 0xFFFFFFFF;
@@ -548,25 +552,45 @@
   }
 
   // Devuelve { text, kind }. Si se pasa `kind` se usa ese lector sin adivinar
+  // RTF: lector completo (tablas, imágenes, listas…); si fallara, el simple de siempre.
+  function rtfResult(s, w) {
+    try {
+      const r = rtfRead.readRtf(s);
+      if (r.blocks.length) { for (const m of r.warnings) w.push(m); return { text: s, kind: 'rtf', blocks: r.blocks, page: r.page, meta: r.meta, title: r.title }; }
+    } catch (e) { w.push('lector RTF completo falló (' + e.message + '); uso el simple'); }
+    return { text: s, kind: 'rtf', blocks: rtfToBlocks(s) };
+  }
+
   // (kind: 'doc' | 'rtf' | 'html' | 'text'); sin `kind` autodetecta el .doc.
   function readAnyDoc(input, warnings, kind) {
     const w = warnings || [];
     const bytes = toU8(input);
     if (kind === 'rtf') {
       const s = decodeText(bytes);
-      return { text: s, kind: 'rtf', blocks: rtfToBlocks(s) };
+      return rtfResult(s, w);
     }
     if (kind === 'html') return { text: htmlToText(decodeText(bytes)), kind: 'html' };
     if (kind === 'text') return { text: decodeText(bytes), kind: 'text' };
     if (kind && kind !== 'doc') throw new Error('formato de documento no soportado: ' + kind);
-    if (isOLE2(bytes)) return { text: extractWordText(bytes, w), kind: 'ole2' };
+    if (isOLE2(bytes)) {
+      // .doc binario: primero el lector con formato (tablas, listas, imágenes…); si falla, el texto plano de siempre.
+      try {
+        const cfb = parseCFB(bytes); const wd = cfb.get('WordDocument');
+        if (wd && wd.length > 0x200 && u16(wd, 0) === 0xA5EC) {
+          const table = cfb.get((u16(wd, 0x0A) & 0x0200) ? '1Table' : '0Table');
+          const r = table ? docBinary.readDocBinary(wd, table, cfb.get('Data'), { cp1252ToStr, utf16leToStr }) : null;
+          if (r && r.blocks.length) { for (const m of r.warnings) w.push(m); return { text: '', kind: 'ole2', blocks: r.blocks, page: r.page }; }
+        }
+      } catch (e) { w.push('lector .doc con formato falló (' + e.message + '); uso solo el texto'); }
+      return { text: extractWordText(bytes, w), kind: 'ole2' };
+    }
     const head = asciiHead(bytes, 16);
     if (/^\s*\{\\rtf/i.test(head)) {
       w.push('el .doc no es el formato binario de Word sino RTF; lo abri como texto');
       // Igual que la rama explicita: hay exportadores (PDF -> RTF) que escriben el
       // cuerpo en UTF-8 aunque digan \ansi; leerlo como CP1252 deja "Ã¡" y "â€”".
       const s = decodeText(bytes);
-      return { text: s, kind: 'rtf', blocks: rtfToBlocks(s) };
+      return rtfResult(s, w);
     }
     const text = decodeText(bytes);
     if (/^\s*<(?:!doctype|html|head|body|meta|div|p|table)\b/i.test(text) || /<html[\s>]/i.test(text.slice(0, 4000))) {
@@ -623,8 +647,9 @@
     const res = readAnyDoc(input, warnings, kind);
     const blocks = res.blocks ? res.blocks : textToBlocks(cleanDocText(res.text));
     const doc = model.createDoc({
-      title: o.title || (o.sourcePath ? baseName(o.sourcePath) : 'Documento'),
-      meta: { source: o.format || (kind === 'ole2' ? 'doc' : kind), sourcePath: o.sourcePath || '' },
+      title: o.title || res.title || (o.sourcePath ? baseName(o.sourcePath) : 'Documento'),
+      meta: Object.assign({}, res.meta || {}, { source: o.format || (kind === 'ole2' ? 'doc' : kind), sourcePath: o.sourcePath || '' }),
+      page: res.page,
       blocks,
       warnings
     });

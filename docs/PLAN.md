@@ -109,24 +109,52 @@ nativa con WebView.
 6. **Pulir y validar:** tema, accesibilidad, rendimiento, manejo de errores,
    pruebas en Android 8.0 o posterior y verificación de cada formato.
 
-## Estado actual conocido
+## Estado actual (rama `refactor/modular`)
 
-La app ya cuenta con una interfaz de biblioteca, importación y almacenamiento
-local de archivos, persistencia de datos básicos, búsqueda por título o
-formato, ficha de libro y una base de cuaderno con exportación/compartición.
+Probado en Chrome (viewport de celular) con un flujo completo: importar, leer, resaltar,
+añadir nota, recargar y reabrir, cuaderno y exportación `.md`. **Todavía no se probó en un
+dispositivo Android real ni con archivos reales grandes.**
 
-El lector integrado aún no renderiza los documentos: presenta un marcador de
-posición. Por eso, el progreso real, la selección de texto y los resaltados
-vinculados al contenido todavía no forman un flujo de lectura funcional. El
-módulo `modules/document-editor` está presente en el proyecto, pero aún no está
-integrado con el lector de Digilibrary.
+- **Formatos con lector:** TXT, Markdown, DOCX y ODT (núcleo de documentos compartido con
+  MC Browser, copiado de `mcbro-refact`; ver `modules/document-editor/SOURCE.md`).
+- **Pendientes:** PDF, EPUB, RTF y DOC. El núcleo ya lee RTF y DOC; falta cablearlos. EPUB
+  solo se sabe escribir, hay que escribir el lector. PDF: pdf.js ya está vendorizado y
+  `mcbro-refact` tiene `core/pdf-pages.js` con capa de texto.
+- **Anotaciones:** se anclan al texto (posición + cita + contexto), no a ids que cambian
+  entre aperturas. Si el texto cambia se reubican; si desaparece quedan como huérfanas
+  (siguen en el cuaderno, sin resaltado).
+- **Duplicados:** el id del libro es el hash del contenido; importar dos veces no duplica.
+- **Limitaciones conocidas:** el Markdown no interpreta negrita, cursiva ni enlaces en línea
+  (el núcleo no los soporta); el progreso es porcentaje de scroll, no "página";
+  no hay portadas extraídas ni metadatos de autor editables.
+
+## Estructura modular
+
+```
+src/main.js        cablea módulos (sin lógica)
+src/data/          store (estado + persistencia), importer        -> sin DOM, con tests
+src/platform/      Capacitor: storage, files, share, back-button  -> único código nativo
+src/readers/       formato -> contenido; index.js es el registro  -> agregar un formato = 1 archivo
+src/reader/        visor, anclas (puras) y selección
+src/notes/         exportación .md / .txt
+src/ui/            una pantalla por archivo + router
+modules/document-editor/   núcleo compartido con MC Browser (no se edita aquí)
+tools/sync-core.mjs        trae el núcleo actualizado desde mcbro-refact
+tests/             npm test (31 pruebas, incluye jsdom y el núcleo real)
+```
+
+Contrato de un lector: `load(bytes, book) -> { kind:'reflow', title, css, blocks:[{html}], warnings }`.
+
+## Decisiones tomadas
+
+- **Capacitor se mantiene.** Todo el stack de lectura es JS; pasar a Kotlin/Room obligaría
+  a un puente sin beneficio hoy. La persistencia está detrás de `store.js`: si `Preferences`
+  se queda corta, se cambia el adaptador de `platform/storage.js` (SQLite o IndexedDB).
+- **minSdk 24 (Android 7).** Es el mínimo por defecto de Capacitor y no se pierde ninguna
+  capacidad; subirlo a 26 no aporta nada hoy.
 
 ## Decisiones pendientes
 
-- ¿Mantener Capacitor o migrar a una app Android nativa con Kotlin y WebView?
-- ¿Usar Room/SQLite o conservar almacenamiento Capacitor para la biblioteca?
-- ¿Qué formatos y cuál parser serán el primer objetivo del lector?
-- ¿Cómo representar posiciones estables en formatos reflowable como EPUB y en
-  formatos paginados como PDF?
-- ¿Qué metadatos y datos de progreso se pueden extraer de forma fiable por
-  formato?
+- ¿Qué formato sigue: PDF o EPUB? (PDF necesita posiciones por página y texto de pdf.js.)
+- ¿Base de datos con más capacidad cuando haya muchas anotaciones?
+- ¿Qué metadatos (autor, portada) se pueden extraer de forma fiable por formato?

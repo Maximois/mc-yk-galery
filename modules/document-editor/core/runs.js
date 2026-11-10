@@ -3,7 +3,8 @@
  * MC Browser -- modulo document-editor / core/runs.js
  *
  * Algebra de tramos (runs): el formato dentro de un parrafo. Un run es
- * { text, bold, italic, underline, strike, color, highlight, font, size }.
+ * { text, bold, italic, underline, strike, color, highlight, font, size, vert }
+ * (vert: 'sup' | 'sub' = superindice / subindice).
  * Todas las funciones son puras y no dependen de Electron, del DOM ni de Node:
  * se usan igual en el main (parches de la IA), en el renderer (edicion sobre
  * la seleccion) y en los tests.
@@ -31,7 +32,7 @@
   const model = deps.model;
 
   const BOOL_KEYS = ['bold', 'italic', 'underline', 'strike'];
-  const VALUE_KEYS = ['color', 'highlight', 'font', 'size', 'link', 'note', 'comment', 'ins', 'del'];
+  const VALUE_KEYS = ['color', 'highlight', 'font', 'size', 'vert', 'link', 'note', 'comment', 'ins', 'del'];
   const PROP_KEYS = BOOL_KEYS.concat(VALUE_KEYS);
 
   const present = (v) => v !== undefined && v !== null;

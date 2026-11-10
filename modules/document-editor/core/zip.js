@@ -269,7 +269,8 @@
 
       let method = 0;
       let payload = data;
-      if ((hasStreams || nodeZlib) && data.length > 0) {
+      // opts.stored: nombres que NO se comprimen (ODS exige 'mimetype' sin comprimir; lo usa calc-editor/core/ods.js).
+      if ((hasStreams || nodeZlib) && data.length > 0 && !(opts && opts.stored && opts.stored.includes(entry.name))) {
         try {
           const deflated = await deflateRaw(data);
           if (deflated.length < data.length) { method = 8; payload = deflated; }

@@ -81,7 +81,10 @@
       <section id="view-notebook" class="view">
         <div id="notebook-header" class="notebook-header">
           <h2 id="notebook-title">Mi Cuaderno</h2>
-          <button id="btn-export-notes" class="btn-secondary">Exportar Resumen (TXT/MD)</button>
+          <div class="notebook-actions">
+            <button id="btn-export-md" class="btn-secondary">Exportar .md</button>
+            <button id="btn-export-txt" class="btn-secondary">Exportar .txt</button>
+          </div>
         </div>
         <div id="notebook-empty" class="empty hidden">
           <p>Este libro aún no tiene anotaciones.</p>
@@ -92,6 +95,6 @@
     </main>
   </div>
   <input type="file" id="file-input" accept=".pdf,.epub,.docx,.doc,.odt,.txt,.md,.rtf,.html,.htm" multiple hidden>
-  <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

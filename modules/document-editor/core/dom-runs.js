@@ -93,6 +93,8 @@
     if (tag === 'i' || tag === 'em') p.italic = true;
     if (tag === 'u' || tag === 'ins') p.underline = true;
     if (tag === 's' || tag === 'strike' || tag === 'del') p.strike = true;
+    if (tag === 'sup') p.vert = 'sup';
+    if (tag === 'sub') p.vert = 'sub';
     if (tag === 'a') {
       const href = String(el.getAttribute('href') || '').trim();
       if (model.isSafeLink(href)) p.link = href;
@@ -133,6 +135,10 @@
       // `none` solo se registra para el subrayado: un tachado explicito en falso
       // nunca hace falta (ningun bloque lo trae por defecto).
       if (deco.trim() === 'none') p.underline = false;
+    }
+    if (st['vertical-align']) {
+      const va = st['vertical-align'].toLowerCase();
+      if (va === 'super') p.vert = 'sup'; else if (va === 'sub') p.vert = 'sub';
     }
     if (st.color) { const c = parseColor(st.color); if (c) p.color = c; }
     const bg = parseColor(st['background-color'] || st.background);

@@ -131,6 +131,8 @@ export function createReaderView({ store }) {
       const bytes = await readBookFile(book.path);
       const content = await loadDocument(bytes, book);
       if (token !== openToken) return;
+      // Si el archivo trae autor y el libro todavía no tiene uno, se completa solo (no pisa lo editado).
+      if (content.meta && content.meta.author && !book.author) store.updateBook(book.id, { author: content.meta.author });
       host.innerHTML = '';
       viewer = createReflowViewer({ host, onSelectionChange, onProgress });
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);

@@ -115,11 +115,17 @@ Probado en Chrome (viewport de celular) con un flujo completo: importar, leer, r
 añadir nota, recargar y reabrir, cuaderno y exportación `.md`. **Todavía no se probó en un
 dispositivo Android real ni con archivos reales grandes.**
 
-- **Formatos con lector:** TXT, Markdown, DOCX y ODT (núcleo de documentos compartido con
-  MC Browser, copiado de `mcbro-refact`; ver `modules/document-editor/SOURCE.md`).
-- **Pendientes:** PDF, EPUB, RTF y DOC. El núcleo ya lee RTF y DOC; falta cablearlos. EPUB
-  solo se sabe escribir, hay que escribir el lector. PDF: pdf.js ya está vendorizado y
-  `mcbro-refact` tiene `core/pdf-pages.js` con capa de texto.
+- **Formatos con lector:** TXT, Markdown, DOCX, ODT, RTF, DOC, HTML, EPUB y PDF (núcleo de
+  documentos compartido con MC Browser, copiado de `mcbro-refact`; ver
+  `modules/document-editor/SOURCE.md`). Todos se muestran como texto reflowable y usan el mismo
+  sistema de resaltados y notas. pdf.js y el lector de RTF/DOC solo se cargan al abrir esos formatos.
+- **PDF:** se extrae el texto (no se ve la maquetación, las imágenes ni las tablas como en la
+  página). Un PDF escaneado no tiene texto: se avisa, haría falta OCR. Una vista fiel de páginas
+  sería un segundo visor (hay base en `mcbro-refact/core/pdf-pages.js`).
+- **EPUB:** se lee el orden de lectura del paquete, se incrustan las imágenes internas y se
+  descarta scripts, estilos propios, enlaces externos e imágenes remotas. Los EPUB con DRM no se abren.
+- **DOC binario:** lo lee el núcleo, pero solo se probó con archivos RTF disfrazados de .doc,
+  no con un .doc real de Word. Pendiente de probar con archivos tuyos.
 - **Anotaciones:** se anclan al texto (posición + cita + contexto), no a ids que cambian
   entre aperturas. Si el texto cambia se reubican; si desaparece quedan como huérfanas
   (siguen en el cuaderno, sin resaltado).
@@ -140,7 +146,7 @@ src/notes/         exportación .md / .txt
 src/ui/            una pantalla por archivo + router
 modules/document-editor/   núcleo compartido con MC Browser (no se edita aquí)
 tools/sync-core.mjs        trae el núcleo actualizado desde mcbro-refact
-tests/             npm test (31 pruebas, incluye jsdom y el núcleo real)
+tests/             npm test (42 pruebas, incluye jsdom, el núcleo real y pdf.js)
 ```
 
 Contrato de un lector: `load(bytes, book) -> { kind:'reflow', title, css, blocks:[{html}], warnings }`.
@@ -155,6 +161,7 @@ Contrato de un lector: `load(bytes, book) -> { kind:'reflow', title, css, blocks
 
 ## Decisiones pendientes
 
-- ¿Qué formato sigue: PDF o EPUB? (PDF necesita posiciones por página y texto de pdf.js.)
+- ¿Hace falta una vista fiel de páginas para PDF (maquetación, imágenes)? Sería un segundo visor.
+- ¿OCR para PDF escaneados?
 - ¿Base de datos con más capacidad cuando haya muchas anotaciones?
 - ¿Qué metadatos (autor, portada) se pueden extraer de forma fiable por formato?

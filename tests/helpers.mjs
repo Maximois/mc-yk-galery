@@ -7,9 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// Orden de carga de TODOS los scripts de core/ declarados en doc-core.js (base, legacy y pdf-text).
 export function coreLoadOrder() {
   const src = fs.readFileSync(path.join(ROOT, 'src/readers/doc-core.js'), 'utf8');
-  return [...src.matchAll(/core\/([\w-]+)\.js\?url/g)].map((m) => m[1]);
+  const urls = Object.fromEntries([...src.matchAll(/import (\w+) from '[^']*core\/([\w-]+)\.js\?url'/g)].map((m) => [m[1], m[2]]));
+  const groups = src.slice(src.indexOf('const GROUPS'), src.indexOf('function inject'));
+  return [...groups.matchAll(/(\w+Url)\b/g)].map((m) => urls[m[1]]).filter(Boolean);
 }
 
 export function loadCoreLikeBrowser() {

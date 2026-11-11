@@ -5,8 +5,10 @@
 // y fallan al arrancar. Como script clásico funcionan igual que en MC Browser.
 // Por qué `?url`: Vite copia cada archivo tal cual a dist/ y nos da su URL, sin transformarlo.
 //
-// El ORDEN importa: cada archivo busca a sus dependencias en window.MCDoc al ejecutarse.
-// tests/core-load.test.js lee este archivo y carga el núcleo en el mismo orden.
+// El ORDEN importa dentro de cada grupo: cada archivo busca a sus dependencias en window.MCDoc
+// al ejecutarse. Los grupos se cargan solo cuando un lector los pide (pdf.js pesa ~1,5 MB y no
+// hace falta para abrir un TXT). tests/helpers.mjs lee este archivo y carga los mismos grupos
+// en el mismo orden, así que los tests no pueden desincronizarse de la app.
 import xmlUrl from '../../modules/document-editor/core/xml.js?url';
 import zipUrl from '../../modules/document-editor/core/zip.js?url';
 import modelUrl from '../../modules/document-editor/core/model.js?url';
@@ -15,9 +17,19 @@ import textIoUrl from '../../modules/document-editor/core/text-io.js?url';
 import htmlUrl from '../../modules/document-editor/core/html.js?url';
 import docxReadUrl from '../../modules/document-editor/core/docx-read.js?url';
 import odtReadUrl from '../../modules/document-editor/core/odt-read.js?url';
+import rtfReadUrl from '../../modules/document-editor/core/rtf-read.js?url';
+import docBinaryUrl from '../../modules/document-editor/core/doc-binary.js?url';
+import docReadUrl from '../../modules/document-editor/core/doc-read.js?url';
+import pdfJsUrl from '../../modules/document-editor/vendor/pdf.min.js?url';
+import pdfWorkerUrl from '../../modules/document-editor/vendor/pdf.worker.min.js?url';
+import pdfTextUrl from '../../modules/document-editor/core/pdf-text.js?url';
 
-const SCRIPTS = [xmlUrl, zipUrl, modelUrl, runsUrl, textIoUrl, htmlUrl, docxReadUrl, odtReadUrl];
-const REQUIRED = ['xml', 'zip', 'model', 'textIo', 'html', 'docxRead', 'odtRead'];
+const GROUPS = {
+  base: { scripts: [xmlUrl, zipUrl, modelUrl, runsUrl, textIoUrl, htmlUrl, docxReadUrl, odtReadUrl], provides: ['xml', 'zip', 'model', 'textIo', 'html', 'docxRead', 'odtRead'] },
+  legacy: { scripts: [rtfReadUrl, docBinaryUrl, docReadUrl], provides: ['rtfRead', 'docBinary', 'docRead'] },
+  // pdf-text.js no cuelga de window.MCDoc: se registra como global propio `McDocPdfText`.
+  pdf: { scripts: [pdfJsUrl, pdfTextUrl], provides: [], globals: ['pdfjsLib', 'McDocPdfText'] }
+};
 
 function inject(url) {
   return new Promise((resolve, reject) => {
@@ -30,18 +42,34 @@ function inject(url) {
   });
 }
 
-let pending = null;
+const pending = {};
 
-/** Carga el núcleo una sola vez (la primera vez que se necesita) y devuelve window.MCDoc. */
-export function loadCore() {
-  if (!pending) {
-    pending = (async () => {
-      for (const url of SCRIPTS) await inject(url);
+function loadGroup(name) {
+  if (!pending[name]) {
+    const g = GROUPS[name];
+    pending[name] = (async () => {
+      for (const url of g.scripts) await inject(url);
       const core = window.MCDoc || {};
-      const missing = REQUIRED.filter((k) => !core[k]);
-      if (missing.length) throw new Error('Núcleo de documentos incompleto, falta: ' + missing.join(', '));
-      return core;
-    })().catch((e) => { pending = null; throw e; }); // permite reintentar si falló
+      const missing = g.provides.filter((k) => !core[k]).concat((g.globals || []).filter((k) => !window[k]));
+      if (missing.length) throw new Error('Núcleo de documentos incompleto (' + name + '), falta: ' + missing.join(', '));
+    })().catch((e) => { pending[name] = null; throw e; }); // permite reintentar si falló
   }
-  return pending;
+  return pending[name];
+}
+
+/**
+ * Carga el núcleo base y los grupos pedidos ('legacy' = RTF/DOC/HTML, 'pdf' = pdf.js + extractor).
+ * Devuelve window.MCDoc; con 'pdf' también expone `core.pdfjs` (pdf.js ya configurado) y `core.pdfText`.
+ */
+export async function loadCore(...groups) {
+  await loadGroup('base');
+  for (const g of groups) await loadGroup(g);
+  const core = window.MCDoc;
+  if (groups.includes('pdf')) {
+    // El worker de pdf.js se sirve desde el mismo origen que la app (copiado por Vite a dist/).
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+    core.pdfjs = window.pdfjsLib;
+    core.pdfText = window.McDocPdfText;
+  }
+  return core;
 }

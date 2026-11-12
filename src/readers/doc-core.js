@@ -23,6 +23,8 @@ import docReadUrl from '../../modules/document-editor/core/doc-read.js?url';
 import pdfJsUrl from '../../modules/document-editor/vendor/pdf.min.js?url';
 import pdfWorkerUrl from '../../modules/document-editor/vendor/pdf.worker.min.js?url';
 
+import { ensureDeflateRaw } from '../lib/inflate-polyfill.js';
+
 const GROUPS = {
   base: { scripts: [xmlUrl, zipUrl, modelUrl, runsUrl, textIoUrl, htmlUrl, docxReadUrl, odtReadUrl], provides: ['xml', 'zip', 'model', 'textIo', 'html', 'docxRead', 'odtRead'] },
   legacy: { scripts: [rtfReadUrl, docBinaryUrl, docReadUrl], provides: ['rtfRead', 'docBinary', 'docRead'] },
@@ -47,6 +49,8 @@ function loadGroup(name) {
   if (!pending[name]) {
     const g = GROUPS[name];
     pending[name] = (async () => {
+      // zip.js (grupo base) decide al cargarse si puede descomprimir: el reemplazo va antes. Ver inflate-polyfill.js.
+      if (name === 'base') await ensureDeflateRaw();
       for (const url of g.scripts) await inject(url);
       const core = window.MCDoc || {};
       const missing = g.provides.filter((k) => !core[k]).concat((g.globals || []).filter((k) => !window[k]));

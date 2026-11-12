@@ -176,7 +176,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     const token = mountToken;
     try {
       const page = await pdf.getPage(e.n);
-      if (destroyed || token !== mountToken || e.painted) return;
+      if (destroyed || token !== mountToken || e.painted || e.stale) return;
       const scale = scaleOf(e);
       const vp = page.getViewport({ scale });
       const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1, MAX_CANVAS_SIDE / Math.max(vp.width, vp.height));
@@ -190,11 +190,12 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
       e.task = page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
       await e.task.promise;
       e.task = null;
-      if (destroyed || token !== mountToken) return;
+      if (destroyed || token !== mountToken || e.stale) return; // cambió el tamaño mientras se dibujaba: se repinta
 
       // Capa de texto: permite seleccionar y copiar. Si falla (o el PDF es una imagen), la página sigue visible.
       try {
         const layer = div('textLayer');
+        layer.style.setProperty('--scale-factor', String(scale)); // pdf.js lo exige en el propio contenedor
         e.wrap.appendChild(layer);
         e.text = layer;
         const content = await page.getTextContent();
@@ -204,7 +205,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
           applySearchHighlight(e);
         }
       } catch { /* sin texto seleccionable en esta página */ }
-      e.painted = true;
+      if (!e.stale) e.painted = true;
     } catch (err) {
       if (!(err && err.name === 'RenderingCancelledException')) {
         e.wrap.dataset.error = String((err && err.message) || err);
@@ -212,7 +213,21 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
       }
     } finally {
       e.busy = false;
+      if (e.stale && !destroyed) { e.stale = false; unpaint(e); retrigger(e); }
     }
+  }
+
+  /** Descarta lo pintado de una página cuyo tamaño cambió; si está pintándose, lo hará de nuevo al terminar. */
+  function invalidate(e) {
+    if (e.busy) { e.stale = true; return; }
+    if (e.painted || e.canvas) unpaint(e);
+  }
+
+  /** observe() dispara el callback inicial: si la página está a la vista, se vuelve a pintar. */
+  function retrigger(e) {
+    if (!io) return;
+    io.unobserve(e.wrap);
+    io.observe(e.wrap);
   }
 
   function observeAll() {
@@ -338,6 +353,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
           e.w1 = vp.width;
           e.h1 = vp.height;
           sizeEntry(e);
+          if (e.painted || e.busy) { invalidate(e); retrigger(e); } // ya estaba dibujada con el tamaño provisional
           if (aboveViewport) host.scrollTop += e.wrap.offsetHeight - before; // no mover lo que se está leyendo
         }
       } catch { /* esa página usa el tamaño de la primera */ }
@@ -382,7 +398,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
         no.textContent = n + ' / ' + total;
         wrap.append(anno, no);
         pagesEl.appendChild(wrap);
-        const e = { n, wrap, w1: first.width, h1: first.height, anno, canvas: null, text: null, task: null, painted: false, busy: false };
+        const e = { n, wrap, w1: first.width, h1: first.height, anno, canvas: null, text: null, task: null, painted: false, busy: false, stale: false };
         entries.push(e);
         sizeEntry(e);
       }
@@ -420,7 +436,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
       const e0 = entries[p.block];
       const frac = e0 ? Math.max(0, (host.scrollTop - (e0.wrap.offsetTop - pagesEl.offsetTop)) / Math.max(1, e0.wrap.offsetHeight)) : 0;
       zoom = next;
-      entries.forEach((e) => { unpaint(e); sizeEntry(e); });
+      entries.forEach((e) => { sizeEntry(e); invalidate(e); });
       scrollToPage(p.block, frac);
       observeAll();
       if (onProgress) onProgress(progress());

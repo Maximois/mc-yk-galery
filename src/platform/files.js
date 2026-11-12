@@ -1,6 +1,6 @@
 // Archivos de los libros en el almacenamiento privado de la app (Directory.Data).
 // El documento se copia aquí al importarlo, así no depende de dónde estaba el original.
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { base64ToBytes, bytesToBase64 } from '../lib/bytes.js';
 
 // Múltiplo de 3 bytes: cada trozo codifica a base64 sin relleno ("="), así los trozos se pueden
@@ -37,3 +37,17 @@ export async function deleteBookFile(path) {
     await Filesystem.deleteFile({ path, directory: Directory.Data });
   } catch { /* si ya no existe, mejor */ }
 }
+
+// Archivos de texto auxiliares (por ejemplo, el resultado del OCR de un libro).
+export async function readTextFile(path) {
+  try {
+    const res = await Filesystem.readFile({ path, directory: Directory.Data, encoding: Encoding.UTF8 });
+    return typeof res.data === 'string' ? res.data : await res.data.text();
+  } catch { return null; } // no existe todavía
+}
+
+export async function writeTextFile(path, text) {
+  await Filesystem.writeFile({ path, data: text, directory: Directory.Data, encoding: Encoding.UTF8, recursive: true });
+}
+
+export const ocrPath = (bookId) => 'ocr/' + bookId + '.json';

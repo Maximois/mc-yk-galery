@@ -7,6 +7,7 @@
 //   - las páginas lejanas liberan su canvas (un PDF de cientos de páginas no agota la memoria);
 //   - zoom, y las anotaciones son rectángulos en fracciones de la página (ver pdf-geometry.js).
 // Limitaciones: no hay enlaces internos ni externos del PDF, formularios ni anotaciones del archivo.
+import { pageHasText } from '../ocr/ocr-words.js';
 import { pinchFactor, pinchMetrics } from './pinch.js';
 import { cleanQuote, fitScale, fractionRects, isPdfAnchor, makePdfAnchor, pageAt, rectStyle } from './pdf-geometry.js';
 
@@ -27,12 +28,13 @@ const CSS = `
 .pdf-page .pdf-no{position:absolute;right:6px;bottom:4px;font:11px sans-serif;color:#999;pointer-events:none}
 .pdf-page .pdf-anno{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .pdf-page .pdf-anno>div{position:absolute;mix-blend-mode:multiply;background:rgba(255,214,10,.6)}
-.pdf-page .pdf-anno>div.underline{background:none;box-shadow:inset 0 -2px 0 #e8590c}
+.pdf-page .pdf-anno>div.underline{background:none;box-shadow:0 2px 0 #e8590c}
 .pdf-page .pdf-anno>div.note{background:rgba(0,212,170,.5)}
 .pdf-page .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;-webkit-user-select:text;user-select:text}
 .pdf-page .textLayer span,.pdf-page .textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
 .pdf-page .textLayer span.reader-search-hit{background:rgba(255,154,40,.65);border-radius:2px}
 .pdf-page .textLayer span.reader-search-hit-active{outline:2px solid rgba(255,154,40,.9)}
+.pdf-page .textLayer.ocr .ocr-line{position:static}
 .pdf-page .textLayer ::selection{background:rgba(30,144,255,.35)}
 `;
 
@@ -114,6 +116,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
   let searchGeneration = 0;
   let searchBuild = null;
   let activeSearchMatch = null;
+  const ocr = new Map(); // página -> líneas reconocidas por OCR (solo se usan en páginas sin texto propio)
   const items = new Map(); // id -> anotación guardada (para repintar al cambiar el zoom)
   const listeners = [];
 
@@ -172,6 +175,44 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
     });
   }
 
+  /**
+   * Capa de texto invisible a partir del OCR: una palabra = un <span> con la caja que ocupa en la página
+   * (en %, vale a cualquier zoom). Una línea = un <div>, para que al copiar salgan saltos de línea.
+   */
+  function renderOcrLayer(layer, lines, pageHeightPx) {
+    layer.classList.add('ocr');
+    const fitted = []; // [span, ancho objetivo en fracción de la página]
+    for (const line of lines) {
+      const row = div('ocr-line');
+      line.words.forEach((w, i) => {
+        const span = document.createElement('span');
+        // El espacio va DENTRO del span (white-space:pre): un nodo de texto suelto entre spans absolutos
+        // no se incluye al copiar y las palabras saldrían pegadas.
+        span.textContent = i < line.words.length - 1 ? w.t + ' ' : w.t;
+        span.style.cssText = 'left:' + w.x * 100 + '%;top:' + w.y * 100 + '%;width:' + w.w * 100 + '%;height:' + w.h * 100 +
+          '%;font-size:' + Math.max(4, w.h * pageHeightPx) + 'px';
+        row.appendChild(span);
+        fitted.push([span, w.w]);
+      });
+      layer.appendChild(row);
+    }
+    // La selección y el subrayado siguen el ancho del TEXTO, no el de la caja del span; con una tipografía
+    // distinta a la del escaneo quedarían cortos o largos. Se mide cada palabra (todas juntas: una sola
+    // maquetación) y se estira en horizontal para que ocupe exactamente la caja que midió el OCR.
+    const pageW = layer.getBoundingClientRect().width;
+    if (!(pageW > 0)) return;
+    const natural = fitted.map(([span]) => {
+      const t = span.firstChild;
+      const r = document.createRange();
+      r.setStart(t, 0);
+      r.setEnd(t, t.length > 1 && /\s$/.test(t.data) ? t.length - 1 : t.length); // sin el espacio final
+      return r.getBoundingClientRect().width;
+    });
+    fitted.forEach(([span, frac], i) => {
+      if (natural[i] > 0) span.style.transform = 'scaleX(' + Math.max(0.3, Math.min(3, (frac * pageW) / natural[i])) + ')';
+    });
+  }
+
   async function paint(e) {
     if (e.painted || e.busy || destroyed) return;
     e.busy = true;
@@ -201,7 +242,9 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
         e.wrap.appendChild(layer);
         e.text = layer;
         const content = await page.getTextContent();
-        if (lib.renderTextLayer) {
+        if (!pageHasText(content.items) && ocr.has(e.n)) {
+          renderOcrLayer(layer, ocr.get(e.n), vp.height);
+        } else if (lib.renderTextLayer) {
           e.searchSpans = [];
           await lib.renderTextLayer({ textContentSource: content, container: layer, viewport: vp, textDivs: e.searchSpans }).promise;
           applySearchHighlight(e);
@@ -450,13 +493,15 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   return {
     /** content: { kind:'pdf', pdf, lib }. Devuelve las anotaciones que no se pudieron ubicar. */
-    async mount(content, { highlights = [], startBlock = 0 } = {}) {
+    async mount(content, { highlights = [], startBlock = 0, ocr: ocrPages = null } = {}) {
       this.destroy();
       destroyed = false;
       mountToken++;
       ensureStyle();
       pdf = content.pdf;
       lib = content.lib;
+      ocr.clear();
+      if (ocrPages) for (const k of Object.keys(ocrPages)) ocr.set(Number(k), ocrPages[k]);
       total = pdf.numPages;
       host.classList.add('pdf-mode');
       host.innerHTML = '';
@@ -487,6 +532,12 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
       return orphans;
     },
     addHighlight,
+    /** Llega el OCR de una página: se guarda y, si ya estaba dibujada, se vuelve a dibujar con la nueva capa. */
+    setOcrPage(n, lines) {
+      ocr.set(n, lines);
+      const e = entries[n - 1];
+      if (e && (e.painted || e.busy)) { invalidate(e); retrigger(e); }
+    },
     captureSelection,
     findText,
     clearFind() {
@@ -516,6 +567,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
       entries.forEach(unpaint);
       entries = [];
       items.clear();
+      ocr.clear();
       host.classList.remove('pdf-mode');
       if (pagesEl) { pagesEl.remove(); pagesEl = null; }
       if (pdf) { try { pdf.destroy(); } catch { /* ya liberado */ } pdf = null; }

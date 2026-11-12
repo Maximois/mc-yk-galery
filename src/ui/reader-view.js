@@ -7,6 +7,7 @@ import { PasswordCancelledError } from '../reader/pdf-errors.js';
 import { createReflowViewer } from '../reader/reflow-viewer.js';
 import { createPdfViewer } from '../reader/pdf-viewer.js';
 import { toast } from './toast.js';
+import { createOcrController } from './ocr-controller.js';
 
 const SAVE_EVERY_MS = 1500;
 const ZOOM_STEP = 1.25;
@@ -35,6 +36,7 @@ export function createReaderView({ store }) {
   const noteText = $('note-text');
   const zoomBox = $('zoom-controls');
   const zoomLabel = $('zoom-label');
+  const ocr = createOcrController({ button: $('btn-ocr'), toast });
   const searchToggle = $('reader-search-toggle');
   const searchForm = $('reader-search');
   const searchInput = $('reader-search-input');
@@ -253,18 +255,29 @@ export function createReaderView({ store }) {
       zoomBox.classList.toggle('hidden', !viewer.setZoom);
       showZoom();
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);
-      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0 });
+      const ocrPages = content.kind === 'pdf' ? await ocr.cached(book.id) : null;
       if (token !== openToken) { viewer.destroy(); return; }
+      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0, ocr: ocrPages });
+      if (token !== openToken) { viewer.destroy(); return; }
+      if (content.kind === 'pdf') ocr.attach({ viewer, pdf: content.pdf, bookId: book.id, results: ocrPages });
       searchToggle.disabled = false;
       if (!viewer.hasText()) toast('El documento no tiene texto legible');
       else if (orphans.length) toast(orphans.length + ' anotación(es) ya no se pueden ubicar en el documento');
     } catch (e) {
       if (token !== openToken) return;
-      console.error(e);
+      ocr.detach();
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
       searchToggle.disabled = true;
       pageInfo.textContent = '';
+      if (e instanceof PasswordCancelledError) {
+        // Cancelar el cuadro de contraseña no es un fallo: se ofrece volver a intentarlo.
+        message('Este PDF está protegido con contraseña.<br><button id="retry-password" class="btn-primary" style="margin-top:12px">Escribir contraseña</button>');
+        const retry = $('retry-password');
+        if (retry) retry.addEventListener('click', () => open(bookId));
+        return;
+      }
+      console.error(e);
       message(e instanceof UnsupportedFormatError
         ? 'Todavía no hay lector para <strong>' + escapeHtml(e.format) + '</strong>.'
         : 'No se pudo abrir el documento.<br><small>' + escapeHtml(e.message || e) + '</small>');
@@ -277,10 +290,12 @@ export function createReaderView({ store }) {
     enter(params) { open(params.bookId); },
     leave() {
       openToken++;
+      closePassword(null); // si el usuario sale con el cuadro de contraseña abierto
       clearReaderSearch({ close: true });
       flushProgress();
       hideMenu();
       noteModal.classList.add('hidden');
+      ocr.detach();
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
       searchToggle.disabled = true;

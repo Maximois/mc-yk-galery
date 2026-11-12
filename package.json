@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "sync": "npm run build && npx cap sync",
     "android": "npm run build && npx cap sync && npx cap open android",
-    "sync-core": "node tools/sync-core.mjs"
+    "sync-core": "node tools/sync-core.mjs",
+    "copy-ocr": "node tools/copy-ocr.mjs",
+    "prebuild": "node tools/copy-ocr.mjs",
+    "predev": "node tools/copy-ocr.mjs"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +26,11 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.3",
-    "fflate": "^0.8.3"
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/spa": "^1.0.0",
+    "fflate": "^0.8.3",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "^6.1.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

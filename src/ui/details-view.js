@@ -2,7 +2,7 @@
 import { $, escapeHtml, formatBytes, formatDate } from '../lib/dom.js';
 import { emptyCoverHtml } from '../lib/cover.js';
 import { canRead } from '../readers/index.js';
-import { deleteBookFile } from '../platform/files.js';
+import { deleteBookFile, ocrPath } from '../platform/files.js';
 import { toast } from './toast.js';
 
 const RECENT = 3;
@@ -66,7 +66,7 @@ export function createDetailsView({ store, router }) {
   btnRemove.addEventListener('click', async () => {
     if (!book || !confirm('¿Eliminar "' + book.title + '" de la biblioteca? Se borran también sus notas y resaltados.')) return;
     const removed = await store.removeBook(book.id);
-    if (removed) await deleteBookFile(removed.path); // sin esto el archivo quedaba huérfano ocupando espacio
+    if (removed) { await deleteBookFile(removed.path); await deleteBookFile(ocrPath(removed.id)); } // sin esto el archivo quedaba huérfano ocupando espacio
     toast('Libro eliminado');
     router.reset('library');
   });

@@ -2,7 +2,7 @@
 
 MC Digilibrary es una biblioteca y lector digital para Android. Está inspirada en la experiencia de lectura de MC Browser Suite / MC Doc, pero es una aplicación independiente enfocada en organizar documentos, leerlos y guardar notas.
 
-La app está construida con Vite y Capacitor. Permite importar documentos, organizarlos en una biblioteca, leerlos y tomar notas y resaltados vinculados al texto. Hoy se leen **PDF, EPUB, DOCX, ODT, RTF, DOC, HTML, TXT y Markdown**, el PDF se ve fiel al original (páginas dibujadas con pdf.js, selección de texto, resaltados y zoom) y el resto como texto que se adapta a la pantalla (ver límites en `docs/PLAN.md`).
+La app está construida con Vite y Capacitor. Permite importar documentos, organizarlos en una biblioteca, leerlos y tomar notas y resaltados vinculados al texto. Hoy se leen **PDF, EPUB, DOCX, ODT, RTF, DOC, HTML, TXT y Markdown**, el PDF se ve fiel al original (páginas dibujadas con pdf.js, selección de texto, resaltados, subrayado, zoom con pellizco, contraseña y OCR sin internet para escaneados) y el resto como texto que se adapta a la pantalla (ver límites en `docs/PLAN.md`).
 
 ## Requisitos
 
@@ -18,6 +18,14 @@ npm test
 ## Núcleo compartido con MC Browser
 
 `modules/document-editor/` es una copia del núcleo de `mcbro-refact`. Para actualizarlo: `node tools/sync-core.mjs <ruta-a-mcbro-refact>`.
+
+## OCR
+
+El motor (tesseract.js) y los idiomas viajan dentro de la app. `npm run build`/`npm run dev` copian los archivos desde `node_modules` a `public/ocr/` (no se versionan, ~8 MB) con `tools/copy-ocr.mjs`.
+
+## Compatibilidad
+
+Piso de Android System WebView: Chrome 92 (lo exige pdf.js). Con uno más viejo la app muestra un aviso para actualizarlo en vez de quedar en blanco.
 
 ## Desarrollo web
 

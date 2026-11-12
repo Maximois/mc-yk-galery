@@ -26,3 +26,6 @@ android/app/google-services.json
 # Packaged Android artifacts
 *.apk
 *.aab
+
+# Motor de OCR copiado desde node_modules (tools/copy-ocr.mjs)
+public/ocr/

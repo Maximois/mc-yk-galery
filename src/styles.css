@@ -1025,3 +1025,6 @@ body {
 .selection-preview.error { color: var(--danger); }
 
 .badge-underline { background: rgba(232, 89, 12, 0.18); color: #ff8a4c; border: 1px solid rgba(232, 89, 12, 0.45); }
+
+.btn-ocr { flex: none; padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--text2); background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; }
+.btn-ocr:active { border-color: var(--accent); }

@@ -124,22 +124,28 @@ dispositivo Android real ni con archivos reales grandes.**
   copiar. Tamaños de página propios, zoom con botones, y las páginas lejanas liberan memoria
   (un PDF de 60 páginas nunca tiene más de ~8 canvas vivos). Los resaltados y notas se guardan
   como rectángulos en fracciones de la página, así que se ven igual a cualquier zoom.
-  Límites: sin enlaces del PDF, formularios ni anotaciones del propio archivo; sin zoom con
-  pellizco (solo botones); PDF con contraseña no se abre (avisa); un PDF escaneado se ve bien
-  pero no se puede seleccionar texto (haría falta OCR).
+  Zoom con botones y con pellizco de dos dedos (el punto bajo los dedos queda fijo).
+  **PDF con contraseña:** pide la contraseña (se reintenta si es incorrecta; no se guarda).
+  **OCR:** el botón "OCR" reconoce las páginas sin texto (escaneadas) con tesseract.js, todo
+  sin internet (motor + español e inglés van dentro de la app, ~8 MB en `public/ocr/`,
+  generado por `tools/copy-ocr.mjs`). El resultado se guarda por libro y se muestra como capa
+  de texto seleccionable/subrayable; ~1,5 s por página. Límites del OCR: la búsqueda en el
+  libro todavía no lo recorre, la calidad depende del escaneo (con ruido y texto inclinado
+  acierta casi todo pero falla símbolos raros) y solo reconoce español e inglés.
+  Límites del PDF: sin enlaces del PDF, formularios ni anotaciones del propio archivo.
 - **Resto de formatos:** se muestran como texto reflowable que se adapta a la pantalla (no
   conservan la maquetación del original).
 - **EPUB:** se lee el orden de lectura del paquete, se incrustan las imágenes internas y se
   descarta scripts, estilos propios, enlaces externos e imágenes remotas. Los EPUB con DRM no se abren.
 - **DOC binario:** lo lee el núcleo, pero solo se probó con archivos RTF disfrazados de .doc,
   no con un .doc real de Word. Pendiente de probar con archivos tuyos.
-- **Anotaciones:** se anclan al texto (posición + cita + contexto), no a ids que cambian
+- **Anotaciones:** resaltar, subrayar y resaltar con nota; se anclan al texto (posición + cita + contexto), no a ids que cambian
   entre aperturas. Si el texto cambia se reubican; si desaparece quedan como huérfanas
   (siguen en el cuaderno, sin resaltado).
 - **Duplicados:** el id del libro es el hash del contenido; importar dos veces no duplica.
 - **Limitaciones conocidas:** el Markdown no interpreta negrita, cursiva ni enlaces en línea
   (el núcleo no los soporta); el progreso es porcentaje de scroll, no "página";
-  no hay portadas extraídas ni metadatos de autor editables.
+  no hay portadas extraídas (todos los libros usan la portada estática "Sin portada") ni metadatos de autor editables.
 
 ## Estructura modular
 
@@ -153,7 +159,8 @@ src/notes/         exportación .md / .txt
 src/ui/            una pantalla por archivo + router
 modules/document-editor/   núcleo compartido con MC Browser (no se edita aquí)
 tools/sync-core.mjs        trae el núcleo actualizado desde mcbro-refact
-tests/             npm test (50 pruebas, incluye jsdom, el núcleo real y pdf.js)
+src/ocr/           motor y trabajo de OCR (tesseract.js local), geometría pura
+tests/             npm test (75 pruebas, incluye jsdom, el núcleo real y pdf.js)
 ```
 
 Contrato de un lector: `load(bytes, book)` devuelve `{ kind:'reflow', title, css, blocks:[{html}], warnings }`
@@ -170,7 +177,8 @@ visor `reader/pdf-viewer.js`). Ambos visores exponen la misma interfaz a `ui/rea
 
 ## Decisiones pendientes
 
-- ¿Zoom con pellizco y enlaces dentro del PDF? Hoy solo hay botones de zoom.
-- ¿OCR para PDF escaneados?
+- ¿Enlaces dentro del PDF? Hoy no se siguen.
+- ¿Búsqueda dentro del texto del OCR, y más idiomas de OCR?
+- ¿Portadas reales (primera página del PDF, imagen del EPUB)?
 - ¿Base de datos con más capacidad cuando haya muchas anotaciones?
 - ¿Qué metadatos (autor, portada) se pueden extraer de forma fiable por formato?

@@ -18,6 +18,7 @@ import { createLibraryView } from './ui/library-view.js';
 import { createDetailsView } from './ui/details-view.js';
 import { createReaderView } from './ui/reader-view.js';
 import { createNotebookView } from './ui/notebook-view.js';
+import { createWelcomeScreen } from './ui/welcome-screen.js';
 import { toast } from './ui/toast.js';
 
 export const APP_VERSION = '0.2.0';
@@ -27,6 +28,9 @@ function showFatal(error) {
   const msg = (error && error.message) || String(error);
   const app = document.getElementById('app');
   if (app) {
+    document.getElementById('welcome-screen')?.setAttribute('hidden', '');
+    document.getElementById('header')?.removeAttribute('inert');
+    document.getElementById('main')?.removeAttribute('inert');
     // Un error de arranque ya no deja una pantalla muda: se ve qué falló.
     app.insertAdjacentHTML('afterbegin',
       '<div class="fatal"><strong>MC Digilibrary no pudo iniciar</strong><br><small></small></div>');
@@ -54,10 +58,19 @@ async function boot() {
   const router = createRouter({ views, headerTitle: $('title'), backButton: $('btn-back') });
 
   $('btn-back').addEventListener('click', () => router.back());
+  $('reader-back').addEventListener('click', () => router.back());
   installBackButton(() => router.back());
 
   await store.load();
   router.reset('library');
+  createWelcomeScreen({
+    root: $('welcome-screen'),
+    onComplete: () => {
+      $('header').removeAttribute('inert');
+      $('main').removeAttribute('inert');
+      $('btn-add-book').focus();
+    }
+  });
 }
 
 function start() {

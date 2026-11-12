@@ -34,6 +34,10 @@ export function createReaderView({ store }) {
   const noteText = $('note-text');
   const zoomBox = $('zoom-controls');
   const zoomLabel = $('zoom-label');
+  const searchToggle = $('reader-search-toggle');
+  const searchForm = $('reader-search');
+  const searchInput = $('reader-search-input');
+  const searchCount = $('reader-search-count');
 
   let book = null;
   let viewer = null;
@@ -41,6 +45,8 @@ export function createReaderView({ store }) {
   let saveTimer = 0;
   let pendingProgress = null;
   let openToken = 0; // descarta respuestas de una apertura anterior si el usuario ya salió
+  let searchTimer = 0;
+  let searchRequest = 0;
 
   slider.min = '0';
   slider.max = '100';
@@ -133,11 +139,80 @@ export function createReaderView({ store }) {
   $('zoom-in').addEventListener('click', () => zoomBy(ZOOM_STEP));
   $('zoom-out').addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
 
+  function clearReaderSearch({ close = false } = {}) {
+    clearTimeout(searchTimer);
+    searchTimer = 0;
+    searchRequest++;
+    if (viewer && viewer.clearFind) viewer.clearFind();
+    searchInput.value = '';
+    searchCount.textContent = '';
+    if (close) {
+      searchForm.classList.add('hidden');
+      searchToggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  async function findText(direction = 1) {
+    const query = searchInput.value;
+    if (!query.trim()) {
+      clearReaderSearch();
+      return;
+    }
+    if (!viewer || !viewer.findText) return;
+
+    const request = ++searchRequest;
+    searchCount.textContent = 'Buscando…';
+    try {
+      const result = await viewer.findText(query, direction);
+      if (request !== searchRequest) return;
+      if (!result) {
+        searchCount.textContent = 'Sin resultados';
+        return;
+      }
+      const location = result.page ? ' · pág. ' + result.page : '';
+      searchCount.textContent = result.index + '/' + result.total + location;
+    } catch (error) {
+      if (request !== searchRequest) return;
+      console.error('No se pudo buscar en el documento', error);
+      searchCount.textContent = 'Error al buscar';
+      toast('No se pudo buscar en el documento');
+    }
+  }
+
+  searchToggle.addEventListener('click', () => {
+    const open = searchForm.classList.contains('hidden');
+    searchForm.classList.toggle('hidden', !open);
+    searchToggle.setAttribute('aria-expanded', String(open));
+    if (open) searchInput.focus();
+    else clearReaderSearch();
+  });
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = 0;
+      findText(1);
+    }, 250);
+  });
+  searchForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    clearTimeout(searchTimer);
+    searchTimer = 0;
+    findText(1);
+  });
+  $('reader-search-prev').addEventListener('click', () => findText(-1));
+  $('reader-search-next').addEventListener('click', () => findText(1));
+  $('reader-search-close').addEventListener('click', () => {
+    clearReaderSearch({ close: true });
+    searchToggle.focus();
+  });
+
   async function open(bookId) {
     const token = ++openToken;
+    clearReaderSearch({ close: true });
     book = store.getBook(bookId);
     if (!book) return;
     toolbar.classList.remove('hidden');
+    searchToggle.disabled = true;
     pageInfo.textContent = 'Cargando…';
     message('Cargando documento…');
     try {
@@ -153,6 +228,7 @@ export function createReaderView({ store }) {
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);
       const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0 });
       if (token !== openToken) { viewer.destroy(); return; }
+      searchToggle.disabled = false;
       if (!viewer.hasText()) toast('El documento no tiene texto legible');
       else if (orphans.length) toast(orphans.length + ' anotación(es) ya no se pueden ubicar en el documento');
     } catch (e) {
@@ -160,6 +236,7 @@ export function createReaderView({ store }) {
       console.error(e);
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
+      searchToggle.disabled = true;
       pageInfo.textContent = '';
       message(e instanceof UnsupportedFormatError
         ? 'Todavía no hay lector para <strong>' + escapeHtml(e.format) + '</strong>.'
@@ -173,11 +250,13 @@ export function createReaderView({ store }) {
     enter(params) { open(params.bookId); },
     leave() {
       openToken++;
+      clearReaderSearch({ close: true });
       flushProgress();
       hideMenu();
       noteModal.classList.add('hidden');
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
+      searchToggle.disabled = true;
       host.innerHTML = '';
       book = null;
     }

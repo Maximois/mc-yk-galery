@@ -29,6 +29,8 @@ const CSS = `
 .pdf-page .pdf-anno>div.note{background:rgba(0,212,170,.5)}
 .pdf-page .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;-webkit-user-select:text;user-select:text}
 .pdf-page .textLayer span,.pdf-page .textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.pdf-page .textLayer span.reader-search-hit{background:rgba(255,154,40,.65);border-radius:2px}
+.pdf-page .textLayer span.reader-search-hit-active{outline:2px solid rgba(255,154,40,.9)}
 .pdf-page .textLayer ::selection{background:rgba(30,144,255,.35)}
 `;
 
@@ -42,6 +44,56 @@ function ensureStyle() {
 
 const div = (cls) => { const e = document.createElement('div'); if (cls) e.className = cls; return e; };
 
+export function indexPdfPageText(items, query) {
+  const needle = query.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+  if (!needle) return [];
+  let raw = '';
+  const owners = [];
+  let textItemIndex = 0;
+  items.forEach((item) => {
+    if (typeof item.str !== 'string') return;
+    const index = textItemIndex++;
+    if (raw) {
+      raw += ' ';
+      owners.push(-1);
+    }
+    for (let i = 0; i < item.str.length; i++) {
+      raw += item.str[i];
+      owners.push(index);
+    }
+  });
+
+  let text = '';
+  const normalizedOwners = [];
+  let inWhitespace = false;
+  for (let i = 0; i < raw.length; i++) {
+    if (/\s/.test(raw[i])) {
+      if (text && !inWhitespace) {
+        text += ' ';
+        normalizedOwners.push(-1);
+      }
+      inWhitespace = true;
+    } else {
+      text += raw[i].toLocaleLowerCase();
+      normalizedOwners.push(owners[i]);
+      inWhitespace = false;
+    }
+  }
+  if (text.endsWith(' ')) {
+    text = text.slice(0, -1);
+    normalizedOwners.pop();
+  }
+
+  const matches = [];
+  let from = 0;
+  while ((from = text.indexOf(needle, from)) !== -1) {
+    const itemIndexes = new Set(normalizedOwners.slice(from, from + needle.length).filter((index) => index >= 0));
+    matches.push([...itemIndexes]);
+    from += Math.max(1, needle.length);
+  }
+  return matches;
+}
+
 export function createPdfViewer({ host, onSelectionChange, onProgress }) {
   let pdf = null;
   let lib = null;
@@ -54,6 +106,12 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
   let scrollTimer = 0;
   let selTimer = 0;
   let mountToken = 0;
+  let searchQuery = '';
+  let searchMatches = [];
+  let searchIndex = -1;
+  let searchGeneration = 0;
+  let searchBuild = null;
+  let activeSearchMatch = null;
   const items = new Map(); // id -> anotación guardada (para repintar al cambiar el zoom)
   const listeners = [];
 
@@ -93,7 +151,23 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     if (e.task) { try { e.task.cancel(); } catch { /* ya terminó */ } e.task = null; }
     if (e.canvas) { e.canvas.width = 0; e.canvas.height = 0; e.canvas.remove(); e.canvas = null; } // libera la memoria del bitmap
     if (e.text) { e.text.remove(); e.text = null; }
+    e.searchSpans = [];
     e.painted = false;
+  }
+
+  function clearSearchHighlights() {
+    activeSearchMatch = null;
+    entries.forEach((e) => e.searchSpans?.forEach((span) => {
+      span.classList.remove('reader-search-hit', 'reader-search-hit-active');
+    }));
+  }
+
+  function applySearchHighlight(e) {
+    if (!activeSearchMatch || activeSearchMatch.page !== e.n || !e.searchSpans) return;
+    activeSearchMatch.itemIndexes.forEach((index) => {
+      const span = e.searchSpans[index];
+      if (span) span.classList.add('reader-search-hit', 'reader-search-hit-active');
+    });
   }
 
   async function paint(e) {
@@ -124,7 +198,11 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
         e.wrap.appendChild(layer);
         e.text = layer;
         const content = await page.getTextContent();
-        if (lib.renderTextLayer) await lib.renderTextLayer({ textContentSource: content, container: layer, viewport: vp, textDivs: [] }).promise;
+        if (lib.renderTextLayer) {
+          e.searchSpans = [];
+          await lib.renderTextLayer({ textContentSource: content, container: layer, viewport: vp, textDivs: e.searchSpans }).promise;
+          applySearchHighlight(e);
+        }
       } catch { /* sin texto seleccionable en esta página */ }
       e.painted = true;
     } catch (err) {
@@ -185,6 +263,66 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
   function scrollToPage(idx, frac = 0) {
     const e = entries[Math.max(0, Math.min(total - 1, idx))];
     if (e) host.scrollTop = e.wrap.offsetTop - pagesEl.offsetTop + frac * e.wrap.offsetHeight;
+  }
+
+  async function findText(query, direction = 1) {
+    const needle = query.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    if (!needle) {
+      searchGeneration++;
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+      searchBuild = null;
+      clearSearchHighlights();
+      return null;
+    }
+
+    if (needle !== searchQuery) {
+      searchQuery = needle;
+      searchMatches = [];
+      searchIndex = -1;
+      clearSearchHighlights();
+      const generation = ++searchGeneration;
+      searchBuild = (async () => {
+        for (let pageNumber = 1; pageNumber <= total; pageNumber++) {
+          if (destroyed || generation !== searchGeneration) return;
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+          const pageMatches = indexPdfPageText(content.items, needle);
+          pageMatches.forEach((itemIndexes) => searchMatches.push({ page: pageNumber, itemIndexes }));
+          if (pageNumber % 12 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      })();
+    }
+
+    if (searchBuild) {
+      const build = searchBuild;
+      try {
+        await build;
+      } finally {
+        if (searchBuild === build) searchBuild = null;
+      }
+    }
+
+    if (destroyed || needle !== searchQuery || !searchMatches.length) {
+      clearSearchHighlights();
+      return null;
+    }
+
+    searchIndex = searchIndex < 0
+      ? (direction > 0 ? 0 : searchMatches.length - 1)
+      : (searchIndex + direction + searchMatches.length) % searchMatches.length;
+    activeSearchMatch = searchMatches[searchIndex];
+    clearSearchHighlights();
+    activeSearchMatch = searchMatches[searchIndex];
+    scrollToPage(activeSearchMatch.page - 1);
+    const entry = entries[activeSearchMatch.page - 1];
+    if (entry) {
+      await paint(entry);
+      applySearchHighlight(entry);
+    }
+    if (onProgress) onProgress(progress());
+    return { index: searchIndex + 1, total: searchMatches.length, page: activeSearchMatch.page };
   }
 
   /** Tamaños reales de cada página, en segundo plano. Hasta entonces se usa el de la primera. */
@@ -259,6 +397,15 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     },
     addHighlight,
     captureSelection,
+    findText,
+    clearFind() {
+      searchGeneration++;
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+      searchBuild = null;
+      clearSearchHighlights();
+    },
     clearSelection() { const s = window.getSelection(); if (s) s.removeAllRanges(); },
     setProgress(ratio) { host.scrollTop = ratio * Math.max(0, host.scrollHeight - host.clientHeight); },
     progress: () => (pagesEl ? progress() : { ratio: 0, block: 0, page: 1, pages: 0 }),
@@ -295,6 +442,12 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
       if (pdf) { try { pdf.destroy(); } catch { /* ya liberado */ } pdf = null; }
       total = 0;
       zoom = 1;
+      searchGeneration++;
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+      searchBuild = null;
+      activeSearchMatch = null;
     }
   };
 }

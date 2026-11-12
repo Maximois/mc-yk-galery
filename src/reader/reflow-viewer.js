@@ -17,6 +17,7 @@ a{color:#0b6bcb}
 ::selection{background:rgba(30,144,255,.35)}
 mark.hl{background:rgba(255,214,10,.55);color:inherit;border-radius:2px}
 mark.hl-note{background:rgba(0,212,170,.38);box-shadow:inset 0 -2px 0 #00a884}
+mark.reader-search-hit{background:rgba(255,154,40,.7);color:inherit;outline:2px solid rgba(255,154,40,.4);border-radius:2px}
 `;
 
 const THROTTLE_MS = 250;
@@ -37,6 +38,10 @@ export function createReflowViewer({ host, onSelectionChange, onProgress }) {
   let blocks = []; // elementos .blk, en orden
   let flat = { text: '', starts: [] };
   let texts = [];
+  let searchQuery = '';
+  let searchMatches = [];
+  let searchIndex = -1;
+  let searchMarks = [];
   let scrollTimer = 0;
   let selTimer = 0;
 
@@ -85,6 +90,7 @@ export function createReflowViewer({ host, onSelectionChange, onProgress }) {
   /** Envuelve en <mark> el tramo [from, to) del texto de un bloque, nodo de texto por nodo de texto. */
   function wrapInBlock(blockEl, from, to, item) {
     let pos = 0;
+    const marks = [];
     for (const node of textNodesOf(blockEl)) {
       const start = pos;
       const end = pos + node.data.length;
@@ -96,11 +102,69 @@ export function createReflowViewer({ host, onSelectionChange, onProgress }) {
       if (b < node.data.length) target.splitText(b);
       if (a > 0) target = target.splitText(a);
       const mark = doc.createElement('mark');
-      mark.className = 'hl hl-' + item.type;
+      mark.className = item.className || ('hl hl-' + item.type);
       mark.dataset.hl = item.id;
       target.parentNode.insertBefore(mark, target);
       mark.appendChild(target);
+      marks.push(mark);
     }
+    return marks;
+  }
+
+  function clearSearchMarks() {
+    searchMarks.forEach((mark) => {
+      if (mark.isConnected) mark.replaceWith(...mark.childNodes);
+    });
+    searchMarks = [];
+    blocks.forEach((block) => block.normalize());
+  }
+
+  function findText(query, direction = 1) {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) {
+      clearSearchMarks();
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+      return null;
+    }
+
+    if (needle !== searchQuery) {
+      clearSearchMarks();
+      searchQuery = needle;
+      searchMatches = [];
+      searchIndex = -1;
+      const text = flat.text.toLocaleLowerCase();
+      let from = 0;
+      while ((from = text.indexOf(needle, from)) !== -1) {
+        searchMatches.push({ start: from, end: from + needle.length });
+        from += Math.max(1, needle.length);
+      }
+    }
+
+    if (!searchMatches.length) return null;
+    searchIndex = searchIndex < 0
+      ? (direction > 0 ? 0 : searchMatches.length - 1)
+      : (searchIndex + direction + searchMatches.length) % searchMatches.length;
+    clearSearchMarks();
+    const match = searchMatches[searchIndex];
+    const segments = splitByBlocks(flat.starts, texts, match.start, match.end);
+    for (const segment of segments) {
+      const mark = wrapInBlock(blocks[segment.b], segment.from, segment.to, {
+        id: 'reader-search',
+        type: 'search',
+        className: 'reader-search-hit'
+      });
+      if (mark) searchMarks.push(...mark);
+    }
+    const firstBlock = blocks[segments[0]?.b];
+    if (firstBlock && firstBlock.scrollIntoView) firstBlock.scrollIntoView({ block: 'center' });
+    onProgress && onProgress(progress());
+    return {
+      index: searchIndex + 1,
+      total: searchMatches.length,
+      block: segments[0]?.b || 0
+    };
   }
 
   /** Pinta una anotación. Devuelve false si ya no se puede ubicar en el texto (huérfana). */
@@ -185,6 +249,13 @@ export function createReflowViewer({ host, onSelectionChange, onProgress }) {
     },
     addHighlight,
     captureSelection,
+    findText,
+    clearFind() {
+      clearSearchMarks();
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+    },
     clearSelection() { if (win) win.getSelection().removeAllRanges(); },
     setProgress(ratio) {
       if (!doc) return;
@@ -204,6 +275,10 @@ export function createReflowViewer({ host, onSelectionChange, onProgress }) {
       blocks = [];
       texts = [];
       flat = { text: '', starts: [] };
+      searchQuery = '';
+      searchMatches = [];
+      searchIndex = -1;
+      searchMarks = [];
     }
   };
 }

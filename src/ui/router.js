@@ -9,7 +9,9 @@ export function createRouter({ views, headerTitle, backButton }) {
   function render() {
     const top = stack[stack.length - 1];
     Object.entries(views).forEach(([name, v]) => v.el.classList.toggle('active', name === top.name));
+    document.getElementById('app').classList.toggle('is-reading', top.name === 'reader');
     headerTitle.textContent = views[top.name].title(top.params);
+    document.getElementById('reader-title').textContent = headerTitle.textContent;
     backButton.classList.toggle('hidden', stack.length < 2);
     views[top.name].enter(top.params);
   }

@@ -103,3 +103,24 @@ test('hasText y blockCount reflejan el contenido', async () => {
   assert.equal(viewer.blockCount(), 4);
   assert.equal(viewer.hasText(), true);
 });
+
+test('la búsqueda encuentra coincidencias, avanza y limpia el resaltado', async () => {
+  const { doc, viewer } = await open(await load());
+
+  const first = viewer.findText('TEXTO');
+  assert.deepEqual(first, { index: 1, total: 1, block: 2 });
+  assert.equal(doc.querySelectorAll('mark.reader-search-hit').length, 1);
+  assert.equal(doc.querySelector('mark.reader-search-hit').textContent.toLowerCase(), 'texto');
+
+  assert.deepEqual(viewer.findText('texto', -1), { index: 1, total: 1, block: 2 });
+  viewer.clearFind();
+  assert.equal(doc.querySelectorAll('mark.reader-search-hit').length, 0);
+  assert.equal(viewer.findText('no existe'), null);
+});
+
+test('la búsqueda pagina las coincidencias y vuelve al inicio al avanzar', async () => {
+  const { viewer } = await open(await load());
+  assert.deepEqual(viewer.findText('o'), { index: 1, total: 10, block: 0 });
+  assert.deepEqual(viewer.findText('o'), { index: 2, total: 10, block: 1 });
+  assert.deepEqual(viewer.findText('o', -1), { index: 1, total: 10, block: 0 });
+});

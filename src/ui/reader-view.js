@@ -4,9 +4,11 @@ import { newId } from '../lib/bytes.js';
 import { readBookFile } from '../platform/files.js';
 import { UnsupportedFormatError, loadDocument } from '../readers/index.js';
 import { createReflowViewer } from '../reader/reflow-viewer.js';
+import { createPdfViewer } from '../reader/pdf-viewer.js';
 import { toast } from './toast.js';
 
 const SAVE_EVERY_MS = 1500;
+const ZOOM_STEP = 1.25;
 
 function copyText(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
@@ -30,6 +32,8 @@ export function createReaderView({ store }) {
   const noteModal = $('note-modal');
   const noteSelection = $('note-selection');
   const noteText = $('note-text');
+  const zoomBox = $('zoom-controls');
+  const zoomLabel = $('zoom-label');
 
   let book = null;
   let viewer = null;
@@ -55,9 +59,10 @@ export function createReaderView({ store }) {
     }
   }
 
-  function onProgress({ ratio, block }) {
+  function onProgress({ ratio, block, page, pages }) {
     const pct = Math.round(ratio * 100);
-    pageInfo.textContent = 'Progreso ' + pct + ' %';
+    // PDF: "Página X de N" (lastBlock guarda el índice de página); resto: porcentaje de lectura.
+    pageInfo.textContent = page ? 'Página ' + page + ' de ' + pages : 'Progreso ' + pct + ' %';
     slider.value = String(pct);
     pendingProgress = { progress: pct, lastBlock: block };
     if (!saveTimer) saveTimer = setTimeout(flushProgress, SAVE_EVERY_MS);
@@ -120,6 +125,14 @@ export function createReaderView({ store }) {
 
   slider.addEventListener('input', () => viewer && viewer.setProgress(Number(slider.value) / 100));
 
+  function showZoom() {
+    const z = viewer && viewer.getZoom ? viewer.getZoom() : 1;
+    zoomLabel.textContent = Math.round(z * 100) + '%';
+  }
+  const zoomBy = (f) => { if (viewer && viewer.setZoom) { viewer.setZoom(viewer.getZoom() * f); showZoom(); } };
+  $('zoom-in').addEventListener('click', () => zoomBy(ZOOM_STEP));
+  $('zoom-out').addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
+
   async function open(bookId) {
     const token = ++openToken;
     book = store.getBook(bookId);
@@ -130,19 +143,23 @@ export function createReaderView({ store }) {
     try {
       const bytes = await readBookFile(book.path);
       const content = await loadDocument(bytes, book);
-      if (token !== openToken) return;
+      if (token !== openToken) { if (content.pdf) content.pdf.destroy(); return; } // el usuario ya salió: liberar el PDF
       // Si el archivo trae autor y el libro todavía no tiene uno, se completa solo (no pisa lo editado).
       if (content.meta && content.meta.author && !book.author) store.updateBook(book.id, { author: content.meta.author });
       host.innerHTML = '';
-      viewer = createReflowViewer({ host, onSelectionChange, onProgress });
+      viewer = (content.kind === 'pdf' ? createPdfViewer : createReflowViewer)({ host, onSelectionChange, onProgress });
+      zoomBox.classList.toggle('hidden', !viewer.setZoom);
+      showZoom();
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);
       const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0 });
       if (token !== openToken) { viewer.destroy(); return; }
       if (!viewer.hasText()) toast('El documento no tiene texto legible');
-      else if (orphans.length) toast(orphans.length + ' anotación(es) ya no se pueden ubicar en el texto');
+      else if (orphans.length) toast(orphans.length + ' anotación(es) ya no se pueden ubicar en el documento');
     } catch (e) {
       if (token !== openToken) return;
       console.error(e);
+      if (viewer) { viewer.destroy(); viewer = null; }
+      zoomBox.classList.add('hidden');
       pageInfo.textContent = '';
       message(e instanceof UnsupportedFormatError
         ? 'Todavía no hay lector para <strong>' + escapeHtml(e.format) + '</strong>.'
@@ -160,6 +177,7 @@ export function createReaderView({ store }) {
       hideMenu();
       noteModal.classList.add('hidden');
       if (viewer) { viewer.destroy(); viewer = null; }
+      zoomBox.classList.add('hidden');
       host.innerHTML = '';
       book = null;
     }

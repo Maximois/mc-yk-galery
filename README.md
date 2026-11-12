@@ -2,7 +2,7 @@
 
 MC Digilibrary es una biblioteca y lector digital para Android. Está inspirada en la experiencia de lectura de MC Browser Suite / MC Doc, pero es una aplicación independiente enfocada en organizar documentos, leerlos y guardar notas.
 
-La app está construida con Vite y Capacitor. Permite importar documentos, organizarlos en una biblioteca, leerlos y tomar notas y resaltados vinculados al texto. Hoy se leen **PDF, EPUB, DOCX, ODT, RTF, DOC, HTML, TXT y Markdown**, todos como texto que se adapta a la pantalla (ver límites en `docs/PLAN.md`).
+La app está construida con Vite y Capacitor. Permite importar documentos, organizarlos en una biblioteca, leerlos y tomar notas y resaltados vinculados al texto. Hoy se leen **PDF, EPUB, DOCX, ODT, RTF, DOC, HTML, TXT y Markdown**, el PDF se ve fiel al original (páginas dibujadas con pdf.js, selección de texto, resaltados y zoom) y el resto como texto que se adapta a la pantalla (ver límites en `docs/PLAN.md`).
 
 ## Requisitos
 

@@ -1,14 +1,9 @@
-// Lector de PDF: extrae el TEXTO con pdf.js (core/pdf-text.js) y lo muestra reflowable, igual que
-// el resto de formatos. Es la mejor opción para pantallas chicas (el texto se adapta al ancho) y
-// permite usar el mismo sistema de resaltados y notas.
+// Lector de PDF: abre el documento con pdf.js y devuelve un contenido de tipo 'pdf' que muestra
+// src/reader/pdf-viewer.js: las páginas tal cual el original (canvas) con capa de texto para seleccionar.
 //
-// Limitaciones (a propósito, hasta que se pida otra cosa):
-//   - No muestra la maquetación original, las imágenes ni las tablas como están en la página.
-//   - Un PDF escaneado (solo imágenes) no tiene texto: se avisa, hace falta OCR.
-//   - El progreso es porcentaje del texto, no número de página.
-// Para una vista fiel de las páginas, mcbro-refact tiene core/pdf-pages.js (canvas + capa de texto);
-// sería un segundo visor, no un reemplazo de este.
-import { docToReflow } from './reflow.js';
+// Contrato (distinto del reflowable): load(bytes, book) -> { kind:'pdf', pdf, lib, title, warnings, meta }
+// El visor se encarga de destruir `pdf` al cerrar el lector.
+import { friendlyPdfError } from '../reader/pdf-errors.js';
 
 export const PDF_FORMATS = ['PDF'];
 
@@ -18,13 +13,24 @@ export function createPdfReader(core) {
     formats: PDF_FORMATS,
     async load(bytes, book) {
       if (!core.pdfjs) throw new Error('pdf.js no está cargado');
-      // pdf.js transfiere el buffer a su worker y lo deja inutilizable: se le pasa una copia.
-      const res = await core.pdfText.pdfBytesToBlocks(bytes.slice(), { pdfjs: core.pdfjs });
-      const title = res.meta.title || (book && book.title) || '';
-      const doc = core.model.createDoc({ title, blocks: res.blocks, meta: { source: 'pdf', author: res.meta.author } });
-      const out = docToReflow(core, doc, res.warnings);
-      out.meta = { author: res.meta.author, pageCount: res.pageCount };
-      return out;
+      let pdf;
+      try {
+        // pdf.js transfiere el buffer a su worker y lo deja inutilizable: se le pasa una copia.
+        pdf = await core.pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, useSystemFonts: true, verbosity: 0 }).promise;
+      } catch (e) {
+        throw new Error(friendlyPdfError(e));
+      }
+      let info = {};
+      try { info = ((await pdf.getMetadata()) || {}).info || {}; } catch { /* metadatos opcionales */ }
+      const clean = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 300) : '');
+      return {
+        kind: 'pdf',
+        pdf,
+        lib: core.pdfjs,
+        title: clean(info.Title) || (book && book.title) || '',
+        warnings: [],
+        meta: { author: clean(info.Author), pageCount: pdf.numPages }
+      };
     }
   };
 }

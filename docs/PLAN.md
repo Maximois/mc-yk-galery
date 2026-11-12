@@ -115,13 +115,20 @@ Probado en Chrome (viewport de celular) con un flujo completo: importar, leer, r
 añadir nota, recargar y reabrir, cuaderno y exportación `.md`. **Todavía no se probó en un
 dispositivo Android real ni con archivos reales grandes.**
 
-- **Formatos con lector:** TXT, Markdown, DOCX, ODT, RTF, DOC, HTML, EPUB y PDF (núcleo de
+- **Formatos con lector:** PDF, EPUB, DOCX, ODT, RTF, DOC, HTML, TXT y Markdown (núcleo de
   documentos compartido con MC Browser, copiado de `mcbro-refact`; ver
-  `modules/document-editor/SOURCE.md`). Todos se muestran como texto reflowable y usan el mismo
-  sistema de resaltados y notas. pdf.js y el lector de RTF/DOC solo se cargan al abrir esos formatos.
-- **PDF:** se extrae el texto (no se ve la maquetación, las imágenes ni las tablas como en la
-  página). Un PDF escaneado no tiene texto: se avisa, haría falta OCR. Una vista fiel de páginas
-  sería un segundo visor (hay base en `mcbro-refact/core/pdf-pages.js`).
+  `modules/document-editor/SOURCE.md`). pdf.js y el lector de RTF/DOC solo se cargan al abrir
+  esos formatos.
+- **PDF (fiel al original):** cada página se dibuja con pdf.js en un canvas (maquetación,
+  fuentes, imágenes y tablas tal cual), con una capa de texto invisible para seleccionar y
+  copiar. Tamaños de página propios, zoom con botones, y las páginas lejanas liberan memoria
+  (un PDF de 60 páginas nunca tiene más de ~8 canvas vivos). Los resaltados y notas se guardan
+  como rectángulos en fracciones de la página, así que se ven igual a cualquier zoom.
+  Límites: sin enlaces del PDF, formularios ni anotaciones del propio archivo; sin zoom con
+  pellizco (solo botones); PDF con contraseña no se abre (avisa); un PDF escaneado se ve bien
+  pero no se puede seleccionar texto (haría falta OCR).
+- **Resto de formatos:** se muestran como texto reflowable que se adapta a la pantalla (no
+  conservan la maquetación del original).
 - **EPUB:** se lee el orden de lectura del paquete, se incrustan las imágenes internas y se
   descarta scripts, estilos propios, enlaces externos e imágenes remotas. Los EPUB con DRM no se abren.
 - **DOC binario:** lo lee el núcleo, pero solo se probó con archivos RTF disfrazados de .doc,
@@ -141,15 +148,17 @@ src/main.js        cablea módulos (sin lógica)
 src/data/          store (estado + persistencia), importer        -> sin DOM, con tests
 src/platform/      Capacitor: storage, files, share, back-button  -> único código nativo
 src/readers/       formato -> contenido; index.js es el registro  -> agregar un formato = 1 archivo
-src/reader/        visor, anclas (puras) y selección
+src/reader/        visores (reflow y PDF), anclas y geometría (puras) y selección
 src/notes/         exportación .md / .txt
 src/ui/            una pantalla por archivo + router
 modules/document-editor/   núcleo compartido con MC Browser (no se edita aquí)
 tools/sync-core.mjs        trae el núcleo actualizado desde mcbro-refact
-tests/             npm test (42 pruebas, incluye jsdom, el núcleo real y pdf.js)
+tests/             npm test (50 pruebas, incluye jsdom, el núcleo real y pdf.js)
 ```
 
-Contrato de un lector: `load(bytes, book) -> { kind:'reflow', title, css, blocks:[{html}], warnings }`.
+Contrato de un lector: `load(bytes, book)` devuelve `{ kind:'reflow', title, css, blocks:[{html}], warnings }`
+(texto que se adapta; visor `reader/reflow-viewer.js`) o `{ kind:'pdf', pdf, lib, ... }` (páginas fieles;
+visor `reader/pdf-viewer.js`). Ambos visores exponen la misma interfaz a `ui/reader-view.js`.
 
 ## Decisiones tomadas
 
@@ -161,7 +170,7 @@ Contrato de un lector: `load(bytes, book) -> { kind:'reflow', title, css, blocks
 
 ## Decisiones pendientes
 
-- ¿Hace falta una vista fiel de páginas para PDF (maquetación, imágenes)? Sería un segundo visor.
+- ¿Zoom con pellizco y enlaces dentro del PDF? Hoy solo hay botones de zoom.
 - ¿OCR para PDF escaneados?
 - ¿Base de datos con más capacidad cuando haya muchas anotaciones?
 - ¿Qué metadatos (autor, portada) se pueden extraer de forma fiable por formato?

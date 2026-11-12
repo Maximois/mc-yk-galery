@@ -2,13 +2,21 @@
 
 /** En orden de lectura; las anotaciones sin ancla (huérfanas o antiguas) van al final por fecha. */
 export function sortForExport(items) {
-  const pos = (i) => (i.anchor && Number.isFinite(i.anchor.s) ? i.anchor.s : Infinity);
+  // Texto reflowable: offset en el texto. PDF: página + posición vertical dentro de la página.
+  const pos = (i) => {
+    const a = i.anchor;
+    if (!a) return Infinity;
+    if (Number.isFinite(a.s)) return a.s;
+    if (Number.isFinite(a.page)) return a.page + ((a.rects && a.rects[0] && a.rects[0].y) || 0);
+    return Infinity;
+  };
   return items.slice().sort((a, b) => (pos(a) - pos(b)) || (new Date(a.createdAt) - new Date(b.createdAt)));
 }
 
 function where(item, formatDate) {
   const parts = [];
-  if (Number.isFinite(item.pct)) parts.push('posición ' + item.pct + ' %');
+  if (item.anchor && Number.isFinite(item.anchor.page)) parts.push('página ' + item.anchor.page);
+  else if (Number.isFinite(item.pct)) parts.push('posición ' + item.pct + ' %');
   if (item.createdAt) parts.push(formatDate(item.createdAt));
   return parts.join(' · ');
 }

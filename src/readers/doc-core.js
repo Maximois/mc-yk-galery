@@ -22,13 +22,12 @@ import docBinaryUrl from '../../modules/document-editor/core/doc-binary.js?url';
 import docReadUrl from '../../modules/document-editor/core/doc-read.js?url';
 import pdfJsUrl from '../../modules/document-editor/vendor/pdf.min.js?url';
 import pdfWorkerUrl from '../../modules/document-editor/vendor/pdf.worker.min.js?url';
-import pdfTextUrl from '../../modules/document-editor/core/pdf-text.js?url';
 
 const GROUPS = {
   base: { scripts: [xmlUrl, zipUrl, modelUrl, runsUrl, textIoUrl, htmlUrl, docxReadUrl, odtReadUrl], provides: ['xml', 'zip', 'model', 'textIo', 'html', 'docxRead', 'odtRead'] },
   legacy: { scripts: [rtfReadUrl, docBinaryUrl, docReadUrl], provides: ['rtfRead', 'docBinary', 'docRead'] },
-  // pdf-text.js no cuelga de window.MCDoc: se registra como global propio `McDocPdfText`.
-  pdf: { scripts: [pdfJsUrl, pdfTextUrl], provides: [], globals: ['pdfjsLib', 'McDocPdfText'] }
+  // Solo pdf.js: el PDF se muestra como páginas (src/reader/pdf-viewer.js), no se convierte a texto.
+  pdf: { scripts: [pdfJsUrl], provides: [], globals: ['pdfjsLib'] }
 };
 
 function inject(url) {
@@ -58,8 +57,8 @@ function loadGroup(name) {
 }
 
 /**
- * Carga el núcleo base y los grupos pedidos ('legacy' = RTF/DOC/HTML, 'pdf' = pdf.js + extractor).
- * Devuelve window.MCDoc; con 'pdf' también expone `core.pdfjs` (pdf.js ya configurado) y `core.pdfText`.
+ * Carga el núcleo base y los grupos pedidos ('legacy' = RTF/DOC/HTML, 'pdf' = pdf.js).
+ * Devuelve window.MCDoc; con 'pdf' también expone `core.pdfjs` (pdf.js ya configurado).
  */
 export async function loadCore(...groups) {
   await loadGroup('base');
@@ -69,7 +68,6 @@ export async function loadCore(...groups) {
     // El worker de pdf.js se sirve desde el mismo origen que la app (copiado por Vite a dist/).
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     core.pdfjs = window.pdfjsLib;
-    core.pdfText = window.McDocPdfText;
   }
   return core;
 }

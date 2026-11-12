@@ -13,7 +13,6 @@ const require = createRequire(import.meta.url);
 globalThis.DOMParser = new JSDOM('').window.DOMParser; // el lector EPUB usa DOMParser del navegador
 const core = loadCoreLikeBrowser();
 core.pdfjs = require('../modules/document-editor/vendor/pdf.min.js'); // en la app lo carga doc-core.js
-core.pdfText = globalThis.McDocPdfText; // ídem: doc-core.js lo expone desde el global `McDocPdfText`
 const enc = (s) => new TextEncoder().encode(s);
 const plain = (c) => c.blocks.map((b) => b.html.replace(/<[^>]*>/g, '')).join('\n');
 
@@ -62,20 +61,24 @@ function makePdf(lines) {
   return enc(out);
 }
 
-test('PDF: extrae el texto con pdf.js y no consume el buffer original', async () => {
+test('PDF: se abre como páginas (no como texto) y no consume el buffer original', async () => {
   const bytes = makePdf(['Primera linea del documento.', 'Segunda linea de prueba.']);
   const size = bytes.length;
   const c = await createPdfReader(core).load(bytes, { title: 'P', format: 'PDF' });
-  assert.match(plain(c), /Primera linea del documento/);
-  assert.match(plain(c), /Segunda linea de prueba/);
-  assert.equal(bytes.length, size, 'el buffer original sigue usable (se le pasa una copia a pdf.js)');
+  assert.equal(c.kind, 'pdf');
+  assert.equal(c.pdf.numPages, 1);
   assert.equal(c.meta.pageCount, 1);
+  assert.equal(c.lib, core.pdfjs);
+  assert.equal(bytes.length, size, 'el buffer original sigue usable (se le pasa una copia a pdf.js)');
+  const page = await c.pdf.getPage(1);
+  assert.deepEqual(page.getViewport({ scale: 1 }).width, 612);
+  const text = (await page.getTextContent()).items.map((i) => i.str).join(' ');
+  assert.match(text, /Primera linea del documento/); // la capa de texto de pdf.js tiene el contenido
+  await c.pdf.destroy();
 });
 
-test('PDF sin texto avisa en vez de fallar en silencio', async () => {
-  const c = await createPdfReader(core).load(makePdf([]), { title: 'P', format: 'PDF' });
-  assert.equal(c.blocks.length, 0);
-  assert.ok(c.warnings.some((w) => /no tiene texto|escaneado/i.test(w)));
+test('PDF inválido da un mensaje claro en español', async () => {
+  await assert.rejects(createPdfReader(core).load(enc('esto no es un pdf'), { format: 'PDF' }), /no es un PDF válido|No se pudo abrir el PDF/);
 });
 
 // --------------------------------------------------------------------------------- EPUB

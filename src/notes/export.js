@@ -45,7 +45,7 @@ export function buildNotesText(book, items, { formatDate = defaultDate } = {}) {
   const list = sortForExport(items);
   if (!list.length) out.push('(Sin anotaciones)', '');
   list.forEach((it, i) => {
-    out.push((i + 1) + '. ' + (it.type === 'note' ? 'Nota' : 'Resaltado') + ' (' + where(it, formatDate) + ')');
+    out.push((i + 1) + '. ' + (it.type === 'note' ? 'Nota' : it.type === 'underline' ? 'Subrayado' : 'Resaltado') + ' (' + where(it, formatDate) + ')');
     out.push('   "' + String(it.text || '').replace(/\n+/g, ' ') + '"');
     if (it.comment) out.push('   Nota: ' + it.comment);
     out.push('');

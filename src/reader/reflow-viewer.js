@@ -16,6 +16,7 @@ table{max-width:100%}
 a{color:#0b6bcb}
 ::selection{background:rgba(30,144,255,.35)}
 mark.hl{background:rgba(255,214,10,.55);color:inherit;border-radius:2px}
+mark.hl-underline{background:none;text-decoration:underline;text-decoration-color:#e8590c;text-decoration-thickness:2px;text-underline-offset:3px}
 mark.hl-note{background:rgba(0,212,170,.38);box-shadow:inset 0 -2px 0 #00a884}
 mark.reader-search-hit{background:rgba(255,154,40,.7);color:inherit;outline:2px solid rgba(255,154,40,.4);border-radius:2px}
 `;

@@ -1,13 +1,19 @@
-// Portada generada para los libros: inicial del título sobre un color derivado del propio título,
-// así cada libro es reconocible de un vistazo y el color no cambia entre sesiones.
+// Portada estática para los libros que no traen una propia. Es la misma para todos (no depende
+// del título): así la estantería se ve ordenada y "Sin portada" se entiende de un vistazo.
+// El estilo vive en styles.css (.cover-empty); acá solo el marcado, que usan la biblioteca y la ficha.
 
-export function coverColor(seed) {
-  let h = 0;
-  for (const ch of String(seed || '')) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return 'hsl(' + (h % 360) + ' 42% 30%)';
-}
+const ORNAMENT =
+  '<svg class="cover-ornament" viewBox="0 0 64 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1">' +
+  '<path d="M2 8h22M40 8h22"/><path d="M32 2l5 6-5 6-5-6z"/><circle cx="32" cy="8" r="1.2" fill="currentColor"/></svg>';
 
-export function coverInitial(title) {
-  const m = /[\p{L}\p{N}]/u.exec(String(title || ''));
-  return m ? m[0].toUpperCase() : '?';
+export const COVER_TITLE = 'Sin portada';
+export const COVER_SUBTITLE = '¿Algún hechizo de ocultación?';
+
+/** HTML de la portada por defecto. `big` la agranda para la ficha del libro. */
+export function emptyCoverHtml({ big = false } = {}) {
+  return '<div class="cover-empty' + (big ? ' big' : '') + '" role="img" aria-label="' + COVER_TITLE + '">' +
+    '<div class="cover-frame">' + ORNAMENT +
+    '<div class="cover-empty-title">' + COVER_TITLE + '</div>' +
+    '<div class="cover-empty-sub">' + COVER_SUBTITLE + '</div>' +
+    ORNAMENT + '</div></div>';
 }

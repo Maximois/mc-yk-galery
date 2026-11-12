@@ -7,6 +7,7 @@
 //   - las páginas lejanas liberan su canvas (un PDF de cientos de páginas no agota la memoria);
 //   - zoom, y las anotaciones son rectángulos en fracciones de la página (ver pdf-geometry.js).
 // Limitaciones: no hay enlaces internos ni externos del PDF, formularios ni anotaciones del archivo.
+import { pinchFactor, pinchMetrics } from './pinch.js';
 import { cleanQuote, fitScale, fractionRects, isPdfAnchor, makePdfAnchor, pageAt, rectStyle } from './pdf-geometry.js';
 
 const MARGIN = 8; // px a cada lado de la página
@@ -26,6 +27,7 @@ const CSS = `
 .pdf-page .pdf-no{position:absolute;right:6px;bottom:4px;font:11px sans-serif;color:#999;pointer-events:none}
 .pdf-page .pdf-anno{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .pdf-page .pdf-anno>div{position:absolute;mix-blend-mode:multiply;background:rgba(255,214,10,.6)}
+.pdf-page .pdf-anno>div.underline{background:none;box-shadow:inset 0 -2px 0 #e8590c}
 .pdf-page .pdf-anno>div.note{background:rgba(0,212,170,.5)}
 .pdf-page .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;-webkit-user-select:text;user-select:text}
 .pdf-page .textLayer span,.pdf-page .textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
@@ -94,7 +96,7 @@ export function indexPdfPageText(items, query) {
   return matches;
 }
 
-export function createPdfViewer({ host, onSelectionChange, onProgress }) {
+export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom }) {
   let pdf = null;
   let lib = null;
   let total = 0;
@@ -131,7 +133,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     for (const r of rects) {
       const d = document.createElement('div');
       d.dataset.hl = item.id;
-      if (item.type === 'note') d.className = 'note';
+      if (item.type === 'note' || item.type === 'underline') d.className = item.type;
       d.style.cssText = rectStyle(r);
       e.anno.appendChild(d);
     }
@@ -361,11 +363,84 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     }
   }
 
+  /**
+   * Zoom con dos dedos. Mientras los dedos se mueven solo se escala con CSS (transform) alrededor del
+   * punto medio, que es barato y se ve al instante; al soltar se vuelve a maquetar y dibujar nítido
+   * (applyZoom) dejando fijo el punto que estaba bajo los dedos. Se usan eventos táctiles y no de puntero:
+   * con touch-action el navegador cancela los punteros cuando toma el gesto, y acá se quiere el gesto propio.
+   */
+  function bindPinch() {
+    let g = null; // { dist0, zoom0, factor, cx, cy } mientras hay gesto
+    const pts = (ev) => {
+      const r = host.getBoundingClientRect();
+      const a = ev.touches[0], b = ev.touches[1];
+      return pinchMetrics({ x: a.clientX - r.left, y: a.clientY - r.top }, { x: b.clientX - r.left, y: b.clientY - r.top });
+    };
+    on(host, 'touchstart', (ev) => {
+      if (ev.touches.length !== 2 || !pagesEl) return;
+      const m = pts(ev);
+      g = { dist0: m.dist, zoom0: zoom, factor: 1, cx: m.cx, cy: m.cy };
+      // Origen del escalado en coordenadas de pagesEl: el punto del documento que está entre los dedos.
+      pagesEl.style.transformOrigin = (host.scrollLeft + m.cx - pagesEl.offsetLeft) + 'px ' + (host.scrollTop + m.cy - pagesEl.offsetTop) + 'px';
+      pagesEl.style.willChange = 'transform';
+      window.getSelection && window.getSelection().removeAllRanges(); // los dos dedos no deben dejar una selección a medias
+    }, { passive: true });
+    on(host, 'touchmove', (ev) => {
+      if (!g) return;
+      if (ev.touches.length !== 2) return;
+      ev.preventDefault(); // sin esto el navegador desplaza la página mientras se pellizca
+      const m = pts(ev);
+      g.factor = pinchFactor(g.dist0, m.dist, g.zoom0, ZOOM_MIN, ZOOM_MAX);
+      g.cx = m.cx; g.cy = m.cy;
+      pagesEl.style.transform = 'scale(' + g.factor + ')';
+      if (onZoom) onZoom(Math.round(g.zoom0 * g.factor * 100) / 100);
+    }, { passive: false });
+    const end = (ev) => {
+      if (!g || ev.touches.length >= 2) return;
+      const done = g;
+      g = null;
+      pagesEl.style.transform = '';
+      pagesEl.style.transformOrigin = '';
+      pagesEl.style.willChange = '';
+      applyZoom(done.zoom0 * done.factor, { x: done.cx, y: done.cy });
+    };
+    on(host, 'touchend', end, { passive: true });
+    on(host, 'touchcancel', end, { passive: true });
+  }
+
+  /**
+   * Cambia el zoom dejando quieto el punto del documento que está en `focal` (coordenadas del visor;
+   * sin focal, el borde superior). El punto se guarda como página + fracción de su alto, no como
+   * píxeles, porque el espacio entre páginas no escala y en un PDF largo los píxeles se desfasarían.
+   */
+  function applyZoom(z, focal) {
+    const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
+    if (!pagesEl || next === zoom) { if (onZoom) onZoom(zoom); return zoom; }
+    const fx = focal ? focal.x : 0;
+    const fy = focal ? focal.y : 0;
+    const y = host.scrollTop + fy - pagesEl.offsetTop;
+    const idx = pageAt(entries.map((e) => e.wrap.offsetTop - pagesEl.offsetTop), y);
+    const e0 = entries[idx];
+    const top0 = e0 ? e0.wrap.offsetTop - pagesEl.offsetTop : 0;
+    const frac = e0 ? (y - top0) / Math.max(1, e0.wrap.offsetHeight) : 0;
+    const ratio = next / zoom;
+    const x = host.scrollLeft + fx;
+    zoom = next;
+    entries.forEach((e) => { sizeEntry(e); invalidate(e); });
+    if (e0) host.scrollTop = e0.wrap.offsetTop + frac * e0.wrap.offsetHeight - fy;
+    host.scrollLeft = x * ratio - fx;
+    observeAll();
+    if (onProgress) onProgress(progress());
+    if (onZoom) onZoom(zoom);
+    return zoom;
+  }
+
   function bindEvents() {
     on(host, 'scroll', () => {
       if (scrollTimer) return;
       scrollTimer = setTimeout(() => { scrollTimer = 0; if (!destroyed && onProgress) onProgress(progress()); }, THROTTLE_MS);
     }, { passive: true });
+    bindPinch();
     // En el celular no hay mouseup confiable: selectionchange cubre el arrastre de los manijas.
     on(document, 'selectionchange', () => {
       clearTimeout(selTimer);
@@ -429,19 +504,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress }) {
     hasText: () => true, // no se sabe hasta pintar cada página; un PDF escaneado simplemente no deja seleccionar
     getZoom: () => zoom,
     /** Cambia el zoom (1 = ajustado al ancho) manteniendo la posición de lectura. */
-    setZoom(z) {
-      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
-      if (!pagesEl || next === zoom) return zoom;
-      const p = progress();
-      const e0 = entries[p.block];
-      const frac = e0 ? Math.max(0, (host.scrollTop - (e0.wrap.offsetTop - pagesEl.offsetTop)) / Math.max(1, e0.wrap.offsetHeight)) : 0;
-      zoom = next;
-      entries.forEach((e) => { sizeEntry(e); invalidate(e); });
-      scrollToPage(p.block, frac);
-      observeAll();
-      if (onProgress) onProgress(progress());
-      return zoom;
-    },
+    setZoom(z) { return applyZoom(z, null); },
     destroy() {
       destroyed = true;
       mountToken++;

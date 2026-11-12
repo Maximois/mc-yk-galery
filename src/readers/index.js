@@ -37,10 +37,10 @@ export class UnsupportedFormatError extends Error {
   }
 }
 
-/** Convierte los bytes del libro en contenido listo para el visor. */
-export async function loadDocument(bytes, book) {
+/** Convierte los bytes del libro en contenido listo para el visor. `opts.askPassword` solo lo usa el PDF. */
+export async function loadDocument(bytes, book, opts) {
   const entry = ENTRIES.find((e) => e.formats.includes(upper(book.format)));
   if (!entry) throw new UnsupportedFormatError(book.format);
   const core = await loadCore(...entry.groups);
-  return entry.create(core).load(bytes, book);
+  return entry.create(core).load(bytes, book, opts);
 }

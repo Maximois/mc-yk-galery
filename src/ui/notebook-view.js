@@ -4,6 +4,12 @@ import { buildNotesMarkdown, buildNotesText } from '../notes/export.js';
 import { shareTextFile } from '../platform/share.js';
 import { toast } from './toast.js';
 
+const BADGES = {
+  highlight: { cls: 'badge-highlight', label: 'RESALTADO' },
+  underline: { cls: 'badge-underline', label: 'SUBRAYADO' },
+  note: { cls: 'badge-note', label: 'RESALTADO + NOTA' }
+};
+
 export function createNotebookView({ store }) {
   const el = $('view-notebook');
   const title = $('notebook-title');
@@ -14,10 +20,10 @@ export function createNotebookView({ store }) {
   function card(item) {
     const node = document.createElement('div');
     node.className = 'interaction-card';
-    const isNote = item.type === 'note';
+    const kind = BADGES[item.type] || BADGES.highlight;
     node.innerHTML =
       '<div class="interaction-header"><div class="interaction-meta">' +
-        '<span class="badge ' + (isNote ? 'badge-note' : 'badge-highlight') + '">' + (isNote ? 'RESALTADO + NOTA' : 'RESALTADO') + '</span>' +
+        '<span class="badge ' + kind.cls + '">' + kind.label + '</span>' +
         (item.anchor && Number.isFinite(item.anchor.page) ? '<span>Pág. ' + item.anchor.page + '</span><span>·</span>'
           : Number.isFinite(item.pct) ? '<span>Pos. ' + item.pct + ' %</span><span>·</span>' : '') +
         '<span>' + formatDate(item.createdAt) + '</span></div>' +

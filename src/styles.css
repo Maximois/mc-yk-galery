@@ -367,6 +367,7 @@ body {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: 1fr; /* todas las filas del mismo alto: la tarjeta más alta marca el ritmo */
   gap: 16px;
   padding: 16px;
   align-content: start;
@@ -374,6 +375,8 @@ body {
 }
 
 .book-card {
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--surface1);
@@ -435,6 +438,8 @@ body {
 }
 
 .book-info {
+  flex: 1; /* empuja todo al mismo alto aunque el título ocupe una o dos líneas */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -449,6 +454,8 @@ body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  min-height: 2.8em; /* 2 líneas de line-height 1.4: un título corto ocupa lo mismo que uno largo */
 }
 
 .book-author,
@@ -859,7 +866,8 @@ body {
   overflow-y: auto;
 }
 
-#note-text {
+#note-text,
+#password-input {
   width: 100%;
   padding: 8px 10px;
   background: var(--surface2);
@@ -988,8 +996,6 @@ body {
 }
 
 /* ---- añadidos de la versión modular ---- */
-.cover-initial { font-size: 44px; font-weight: 700; line-height: 1; color: rgba(255, 255, 255, 0.9); }
-.cover-initial.big { font-size: 64px; }
 .hint { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--warn); background: var(--surface2); font-size: 12px; color: var(--text2); border-radius: var(--radius-sm); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .notebook-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1000,3 +1006,22 @@ body {
 .zoom-controls { display: flex; align-items: center; gap: 0; flex: none; }
 .zoom-controls .btn-icon { width: 24px; height: 24px; font-size: 16px; line-height: 1; }
 #zoom-label { min-width: 36px; text-align: center; font-size: 10px; color: var(--text2); }
+
+/* ---- portada estática "Sin portada" (tamaños en px: cqw exige Chrome 105 y el piso es 92) ---- */
+.cover-empty { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; padding: 10px; color: #c9b27c;
+  background: radial-gradient(120% 90% at 50% 0%, #2b2540 0%, #15131f 70%); }
+.cover-frame { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 8px;
+  border: 1px solid rgba(201, 178, 124, 0.7); outline: 1px solid rgba(201, 178, 124, 0.35); outline-offset: 3px; text-align: center; min-width: 0; }
+.cover-ornament { width: 54px; height: auto; opacity: 0.85; }
+.cover-empty-title { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 19px; line-height: 1.1; letter-spacing: 0.02em; color: #e6d6a8; }
+.cover-empty-sub { font-family: Georgia, 'Times New Roman', serif; font-size: 10.5px; line-height: 1.3; opacity: 0.8; }
+.cover-empty.big { padding: 14px; }
+.cover-empty.big .cover-frame { gap: 14px; padding: 12px; }
+.cover-empty.big .cover-ornament { width: 80px; }
+.cover-empty.big .cover-empty-title { font-size: 26px; }
+.cover-empty.big .cover-empty-sub { font-size: 14px; }
+.details-cover { position: relative; }
+#password-input { min-height: 0; font-size: 16px; } /* 16px evita el zoom automático al enfocar */
+.selection-preview.error { color: var(--danger); }
+
+.badge-underline { background: rgba(232, 89, 12, 0.18); color: #ff8a4c; border: 1px solid rgba(232, 89, 12, 0.45); }

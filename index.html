@@ -100,9 +100,21 @@
         <div id="reader-host" class="reader-host"></div>
         <div id="selection-menu" class="selection-menu hidden">
           <button data-action="highlight" class="menu-btn" title="Resaltar">Resaltar</button>
+          <button data-action="underline" class="menu-btn" title="Subrayar">Subrayar</button>
           <button data-action="note" class="menu-btn" title="Añadir Nota">Añadir Nota</button>
           <button data-action="copy" class="menu-btn" title="Copiar">Copiar</button>
           <button data-action="clear" class="menu-btn" title="Cerrar">✕</button>
+        </div>
+        <div id="password-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="password-title">
+          <form id="password-form" class="modal-content" autocomplete="off">
+            <h3 id="password-title">PDF protegido</h3>
+            <p class="selection-preview" id="password-hint">Este documento está cifrado. Escribe la contraseña para abrirlo.</p>
+            <input id="password-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Contraseña" />
+            <div class="modal-actions">
+              <button type="button" id="password-cancel" class="btn-secondary">Cancelar</button>
+              <button type="submit" id="password-ok" class="btn-primary">Abrir</button>
+            </div>
+          </form>
         </div>
         <div id="note-modal" class="modal hidden">
           <div class="modal-content">

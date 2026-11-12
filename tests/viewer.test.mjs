@@ -75,6 +75,18 @@ test('los resaltados guardados se vuelven a pintar al reabrir el libro', async (
   assert.ok(mark.classList.contains('hl-note'));
 });
 
+test('el subrayado se dibuja como subrayado (clase hl-underline), no como resaltado', async () => {
+  const first = await open(await load());
+  const p = first.doc.querySelectorAll('.blk')[2].querySelector('p');
+  select(first.doc, first.win, p, 0, p, 7);
+  const item = { id: 'u1', type: 'underline', anchor: first.viewer.captureSelection().anchor };
+  const second = await open(await load(), [item]);
+  const mark = second.doc.querySelector('mark[data-hl="u1"]');
+  assert.ok(mark.classList.contains('hl-underline'));
+  assert.ok(!mark.classList.contains('hl-note'));
+  assert.match([...second.doc.querySelectorAll('style')].map((x) => x.textContent).join('\n'), /hl-underline\{background:none;text-decoration:underline/);
+});
+
 test('si el texto cambió de lugar la anotación se reubica; si desapareció queda huérfana', async () => {
   const first = await open(await load());
   const p = first.doc.querySelectorAll('.blk')[1].querySelector('p');

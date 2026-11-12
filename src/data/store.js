@@ -107,7 +107,8 @@ export function createStore(storage, key = DEFAULT_KEY) {
       const list = state.interactions.filter((i) => i.bookId === bookId);
       const notes = list.filter((i) => i.type === 'note').length;
       const highlights = list.filter((i) => i.type === 'highlight').length;
-      return { notes, highlights, total: list.length };
+      const underlines = list.filter((i) => i.type === 'underline').length;
+      return { notes, highlights, underlines, total: list.length };
     }
   };
 }

@@ -3,6 +3,7 @@ import { $, escapeHtml } from '../lib/dom.js';
 import { newId } from '../lib/bytes.js';
 import { readBookFile } from '../platform/files.js';
 import { UnsupportedFormatError, loadDocument } from '../readers/index.js';
+import { PasswordCancelledError } from '../reader/pdf-errors.js';
 import { createReflowViewer } from '../reader/reflow-viewer.js';
 import { createPdfViewer } from '../reader/pdf-viewer.js';
 import { toast } from './toast.js';
@@ -38,6 +39,31 @@ export function createReaderView({ store }) {
   const searchForm = $('reader-search');
   const searchInput = $('reader-search-input');
   const searchCount = $('reader-search-count');
+
+  const pwModal = $('password-modal');
+  const pwForm = $('password-form');
+  const pwInput = $('password-input');
+  const pwHint = $('password-hint');
+  let pwDone = null; // resuelve la promesa del cuadro abierto
+
+  /** Pide la contraseña del PDF. Devuelve el texto o null si el usuario cancela. */
+  function askPassword(wrong) {
+    pwHint.textContent = wrong ? 'Contraseña incorrecta. Prueba de nuevo.' : 'Este documento está cifrado. Escribe la contraseña para abrirlo.';
+    pwHint.classList.toggle('error', !!wrong);
+    pwInput.value = '';
+    pwModal.classList.remove('hidden');
+    setTimeout(() => pwInput.focus(), 50);
+    return new Promise((resolve) => { pwDone = resolve; });
+  }
+  function closePassword(value) {
+    pwModal.classList.add('hidden');
+    pwInput.value = ''; // la contraseña no se guarda en ningún lado
+    const done = pwDone;
+    pwDone = null;
+    if (done) done(value);
+  }
+  pwForm.addEventListener('submit', (ev) => { ev.preventDefault(); closePassword(pwInput.value); });
+  $('password-cancel').addEventListener('click', () => closePassword(null));
 
   let book = null;
   let viewer = null;
@@ -107,6 +133,7 @@ export function createReaderView({ store }) {
     if (!btn || !selection) return;
     switch (btn.dataset.action) {
       case 'highlight': await saveInteraction('highlight'); break;
+      case 'underline': await saveInteraction('underline'); break;
       case 'note':
         noteSelection.textContent = selection.text.length > 200 ? selection.text.slice(0, 200) + '…' : selection.text;
         noteText.value = '';
@@ -131,8 +158,8 @@ export function createReaderView({ store }) {
 
   slider.addEventListener('input', () => viewer && viewer.setProgress(Number(slider.value) / 100));
 
-  function showZoom() {
-    const z = viewer && viewer.getZoom ? viewer.getZoom() : 1;
+  function showZoom(value) {
+    const z = Number.isFinite(value) ? value : (viewer && viewer.getZoom ? viewer.getZoom() : 1);
     zoomLabel.textContent = Math.round(z * 100) + '%';
   }
   const zoomBy = (f) => { if (viewer && viewer.setZoom) { viewer.setZoom(viewer.getZoom() * f); showZoom(); } };
@@ -217,12 +244,12 @@ export function createReaderView({ store }) {
     message('Cargando documento…');
     try {
       const bytes = await readBookFile(book.path);
-      const content = await loadDocument(bytes, book);
+      const content = await loadDocument(bytes, book, { askPassword });
       if (token !== openToken) { if (content.pdf) content.pdf.destroy(); return; } // el usuario ya salió: liberar el PDF
       // Si el archivo trae autor y el libro todavía no tiene uno, se completa solo (no pisa lo editado).
       if (content.meta && content.meta.author && !book.author) store.updateBook(book.id, { author: content.meta.author });
       host.innerHTML = '';
-      viewer = (content.kind === 'pdf' ? createPdfViewer : createReflowViewer)({ host, onSelectionChange, onProgress });
+      viewer = (content.kind === 'pdf' ? createPdfViewer : createReflowViewer)({ host, onSelectionChange, onProgress, onZoom: showZoom });
       zoomBox.classList.toggle('hidden', !viewer.setZoom);
       showZoom();
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);

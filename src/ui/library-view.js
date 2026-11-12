@@ -1,6 +1,6 @@
 // Pantalla "Biblioteca": estantería, búsqueda e importación.
 import { $, escapeHtml, formatBytes, formatDate } from '../lib/dom.js';
-import { coverColor, coverInitial } from '../lib/cover.js';
+import { emptyCoverHtml } from '../lib/cover.js';
 import { toast } from './toast.js';
 
 export function createLibraryView({ store, importer, router }) {
@@ -19,8 +19,7 @@ export function createLibraryView({ store, importer, router }) {
     const node = document.createElement('div');
     node.className = 'book-card';
     node.innerHTML =
-      '<div class="book-cover" style="background:' + coverColor(book.title) + '">' +
-        '<div class="cover-fallback"><span class="cover-initial">' + escapeHtml(coverInitial(book.title)) + '</span></div>' +
+      '<div class="book-cover">' + emptyCoverHtml() +
         '<span class="format-badge">' + escapeHtml(book.format) + '</span>' +
       '</div>' +
       '<div class="book-info">' +

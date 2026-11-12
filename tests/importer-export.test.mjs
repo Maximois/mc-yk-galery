@@ -4,7 +4,7 @@ import { createStore } from '../src/data/store.js';
 import { createImporter } from '../src/data/importer.js';
 import { buildNotesMarkdown, buildNotesText, sortForExport } from '../src/notes/export.js';
 import { base64ToBytes, bytesToBase64, newId, sha256Hex } from '../src/lib/bytes.js';
-import { coverColor, coverInitial } from '../src/lib/cover.js';
+import { emptyCoverHtml, COVER_TITLE } from '../src/lib/cover.js';
 import { escapeHtml, formatBytes, safeFileName } from '../src/lib/dom.js';
 
 const mem = () => { const d = {}; return { get: async (k) => d[k] ?? null, set: async (k, v) => { d[k] = v; } }; };
@@ -49,9 +49,10 @@ test('exportación: orden de lectura, Markdown y texto', () => {
   const items = [
     { id: '2', type: 'note', text: 'segunda', comment: 'ojo', anchor: { s: 50 }, pct: 80, createdAt: '2026-11-09T10:00:00Z' },
     { id: '1', type: 'highlight', text: 'primera\nlinea', anchor: { s: 5 }, pct: 10, createdAt: '2026-11-09T11:00:00Z' },
-    { id: '3', type: 'highlight', text: 'sin ancla', createdAt: '2026-11-08T11:00:00Z' }
+    { id: '3', type: 'highlight', text: 'sin ancla', createdAt: '2026-11-08T11:00:00Z' },
+    { id: '4', type: 'underline', text: 'subrayada', anchor: { s: 90 }, createdAt: '2026-11-09T12:00:00Z' }
   ];
-  assert.deepEqual(sortForExport(items).map((i) => i.id), ['1', '2', '3']);
+  assert.deepEqual(sortForExport(items).map((i) => i.id), ['1', '2', '4', '3']);
   const md = buildNotesMarkdown(book, items);
   assert.ok(md.startsWith('# Notas: El libro\n\n*Ana*'));
   assert.ok(md.includes('> primera\n> linea'));
@@ -59,6 +60,7 @@ test('exportación: orden de lectura, Markdown y texto', () => {
   const txt = buildNotesText(book, items);
   assert.ok(txt.includes('1. Resaltado'));
   assert.ok(txt.includes('2. Nota'));
+  assert.ok(txt.includes('3. Subrayado'));
   assert.ok(buildNotesMarkdown(book, []).includes('_Sin anotaciones._'));
 });
 
@@ -68,6 +70,6 @@ test('utilidades: escape, bytes, nombre de archivo, portada', () => {
   assert.equal(formatBytes(1536), '1.5 KB');
   assert.equal(safeFileName('¿Qué es esto? / año 2026'), 'Qué_es_esto_año_2026');
   assert.equal(safeFileName('///'), 'documento');
-  assert.equal(coverInitial('  ñandú'), 'Ñ');
-  assert.equal(coverColor('x'), coverColor('x'));
+  assert.match(emptyCoverHtml(), new RegExp(COVER_TITLE));
+  assert.match(emptyCoverHtml({ big: true }), /cover-empty big/);
 });

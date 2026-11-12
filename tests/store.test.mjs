@@ -22,11 +22,12 @@ test('guarda y recarga libros y anotaciones', async () => {
   await a.addBook({ id: 'b1', title: 'Uno', format: 'TXT' });
   await a.addInteraction({ id: 'i1', bookId: 'b1', type: 'note', text: 'x' });
   await a.addInteraction({ id: 'i2', bookId: 'b1', type: 'highlight', text: 'y' });
+  await a.addInteraction({ id: 'i3', bookId: 'b1', type: 'underline', text: 'z' });
 
   const b = createStore(st);
   await b.load();
   assert.equal(b.books().length, 1);
-  assert.deepEqual(b.statsOf('b1'), { notes: 1, highlights: 1, total: 2 });
+  assert.deepEqual(b.statsOf('b1'), { notes: 1, highlights: 1, underlines: 1, total: 3 });
 });
 
 test('removeBook borra también sus anotaciones y devuelve el libro', async () => {

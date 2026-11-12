@@ -1,6 +1,6 @@
 // Pantalla "Ficha del libro": datos, progreso, últimas anotaciones y accesos al lector y al cuaderno.
 import { $, escapeHtml, formatBytes, formatDate } from '../lib/dom.js';
-import { coverColor, coverInitial } from '../lib/cover.js';
+import { emptyCoverHtml } from '../lib/cover.js';
 import { canRead } from '../readers/index.js';
 import { deleteBookFile } from '../platform/files.js';
 import { toast } from './toast.js';
@@ -33,10 +33,7 @@ export function createDetailsView({ store, router }) {
     const readable = canRead(book.format);
     body.innerHTML =
       '<div class="details-card">' +
-        '<div class="details-cover" style="background:' + coverColor(book.title) + '">' +
-          '<div class="cover-fallback" style="height:100%;justify-content:center"><span class="cover-initial big">' +
-          escapeHtml(coverInitial(book.title)) + '</span><span style="font-size:12px;margin-top:8px;text-transform:uppercase">' +
-          escapeHtml(book.format) + '</span></div></div>' +
+        '<div class="details-cover">' + emptyCoverHtml({ big: true }) + '</div>' +
         '<div class="details-info">' +
           '<div class="details-title">' + escapeHtml(book.title) + '</div>' +
           '<div class="details-meta">' +
@@ -50,7 +47,7 @@ export function createDetailsView({ store, router }) {
             '. El documento queda guardado en tu biblioteca y se podrá leer cuando el formato esté disponible.</p>') +
           '<div class="details-section"><h3>Mi Cuaderno</h3><div class="stats-grid">' +
             stat(stats.total, 'Interacciones') + stat(stats.notes, 'Notas') +
-            stat(stats.highlights, 'Resaltados') + stat((Number(book.progress) || 0) + '%', 'Progreso') +
+            stat(stats.highlights, 'Resaltados') + stat(stats.underlines, 'Subrayados') + stat((Number(book.progress) || 0) + '%', 'Progreso') +
           '</div></div>' +
           recentNotes() +
         '</div>' +

@@ -2,6 +2,8 @@
 // `ctx.loadCore(...groups)` carga el núcleo de documentos (se inyecta para no atar esto a Vite).
 // Registro por formato: sumar un formato = una función en EXTRACTORS.
 import { findCoverPath } from '../readers/epub.js';
+import { fb2Cover } from '../readers/fb2.js';
+import { listComicImages } from '../readers/comic.js';
 import { drawToThumb, imageToThumb, mimeOfPath } from './thumb.js';
 
 async function fromPdf(bytes, ctx) {
@@ -33,8 +35,23 @@ async function zipThumb(bytes, ctx, candidates) {
   return name ? imageToThumb(entries[name], mimeOfPath(name) || 'image/png') : null;
 }
 
+async function fromFb2(bytes) {
+  const c = fb2Cover(bytes);
+  return c ? imageToThumb(c.bytes, c.mime) : null;
+}
+
+async function fromComic(bytes, ctx) {
+  const core = await ctx.loadCore();
+  const { entries } = await core.zip.readZip(bytes);
+  const first = listComicImages(entries)[0];
+  return first ? imageToThumb(entries[first], mimeOfPath(first) || 'image/jpeg') : null;
+}
+
 const EXTRACTORS = {
   PDF: fromPdf,
+  CBZ: fromComic,
+  CBR: fromComic,
+  FB2: fromFb2,
   EPUB: fromEpub,
   ODT: (b, c) => zipThumb(b, c, ['Thumbnails/thumbnail.png']),
   DOCX: (b, c) => zipThumb(b, c, ['docProps/thumbnail.jpeg', 'docProps/thumbnail.jpg', 'docProps/thumbnail.png'])

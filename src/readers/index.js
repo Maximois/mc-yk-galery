@@ -1,7 +1,7 @@
 // Registro de lectores: formato -> lector. Es el único lugar que hay que tocar para sumar un formato.
 //
 // Cada entrada dice qué grupos del núcleo necesita (ver doc-core.js) para no cargar de más:
-//   base   TXT, MD, DOCX, ODT, EPUB
+//   base   TXT, MD, DOCX, ODT, EPUB, FB2, CBZ/CBR
 //   legacy RTF, DOC, HTML
 //   pdf    PDF (pdf.js + extractor de texto)
 import { loadCore } from './doc-core.js';
@@ -10,12 +10,16 @@ import { DOCX_FORMATS, ODT_FORMATS, createDocxReader, createOdtReader } from './
 import { RTF_FORMATS, DOC_FORMATS, HTML_FORMATS, createRtfReader, createDocReader, createHtmlReader } from './legacy.js';
 import { PDF_FORMATS, createPdfReader } from './pdf.js';
 import { EPUB_FORMATS, createEpubReader } from './epub.js';
+import { FB2_FORMATS, createFb2Reader } from './fb2.js';
+import { COMIC_FORMATS, createComicReader } from './comic.js';
 
 const ENTRIES = [
   { formats: TEXT_FORMATS, groups: [], create: createTextReader },
   { formats: DOCX_FORMATS, groups: [], create: createDocxReader },
   { formats: ODT_FORMATS, groups: [], create: createOdtReader },
   { formats: EPUB_FORMATS, groups: [], create: createEpubReader },
+  { formats: FB2_FORMATS, groups: [], create: createFb2Reader },
+  { formats: COMIC_FORMATS, groups: [], create: createComicReader },
   { formats: RTF_FORMATS, groups: ['legacy'], create: createRtfReader },
   { formats: DOC_FORMATS, groups: ['legacy'], create: createDocReader },
   { formats: HTML_FORMATS, groups: ['legacy'], create: createHtmlReader },

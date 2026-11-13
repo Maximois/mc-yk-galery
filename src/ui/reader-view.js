@@ -273,7 +273,7 @@ export function createReaderView({ store }) {
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);
       const ocrPages = content.kind === 'pdf' ? await ocr.cached(book.id) : null;
       if (token !== openToken) { viewer.destroy(); return; }
-      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0, ocr: ocrPages, mode: readPref(MODE_KEY) || 'auto' });
+      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0, ocr: ocrPages, mode: readPref(MODE_KEY) || (content.preferPaged ? 'paged' : 'auto') });
       if (token !== openToken) { viewer.destroy(); return; }
       modeBtn.classList.toggle('hidden', content.kind !== 'pdf');
       if (content.kind === 'pdf') {

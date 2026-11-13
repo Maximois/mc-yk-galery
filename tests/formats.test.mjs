@@ -17,8 +17,8 @@ const enc = (s) => new TextEncoder().encode(s);
 const plain = (c) => c.blocks.map((b) => b.html.replace(/<[^>]*>/g, '')).join('\n');
 
 test('canRead cubre todos los formatos con lector y rechaza el resto', () => {
-  for (const f of ['TXT', 'MD', 'docx', 'ODT', 'EPUB', 'RTF', 'DOC', 'HTML', 'htm', 'PDF']) assert.ok(canRead(f), f);
-  for (const f of ['MOBI', 'CBZ', '', undefined]) assert.equal(canRead(f), false, String(f));
+  for (const f of ['TXT', 'MD', 'docx', 'ODT', 'EPUB', 'RTF', 'DOC', 'HTML', 'htm', 'PDF', 'FB2', 'CBZ', 'cbr']) assert.ok(canRead(f), f);
+  for (const f of ['MOBI', '', undefined]) assert.equal(canRead(f), false, String(f));
 });
 
 test('RTF: texto y párrafos', async () => {

@@ -1,7 +1,7 @@
-// Lector de texto plano y Markdown.
-// Limitación conocida: el núcleo entiende títulos, listas, citas y bloques de código, pero no
-// el énfasis en línea (**negrita**, *cursiva*, enlaces): esas marcas se ven como texto literal.
+// Lector de texto plano y Markdown. El TXT pasa por el núcleo compartido; el Markdown tiene su propio
+// intérprete (markdown.js) porque el núcleo no entiende el énfasis en línea (**negrita**, *cursiva*, enlaces).
 import { docToReflow } from './reflow.js';
+import { MARKDOWN_CSS, markdownToBlocks } from './markdown.js';
 
 export const TEXT_FORMATS = ['TXT', 'MD', 'MARKDOWN'];
 
@@ -21,6 +21,12 @@ export function createTextReader(core) {
     id: 'text',
     formats: TEXT_FORMATS,
     async load(bytes, book) {
+      const fmt = String((book && book.format) || 'txt').toLowerCase();
+      if (fmt === 'md' || fmt === 'markdown') {
+        const blocks = markdownToBlocks(decodeText(bytes)).map((html) => ({ html }));
+        const css = core.html.stylesheet(core.model.createDoc({ title: '', blocks: [] })) + MARKDOWN_CSS;
+        return { kind: 'reflow', title: (book && book.title) || '', css, blocks, warnings: blocks.length ? [] : ['El archivo está vacío'] };
+      }
       const doc = core.textIo.textToDoc(decodeText(bytes), {
         title: book && book.title,
         source: String((book && book.format) || 'txt').toLowerCase()

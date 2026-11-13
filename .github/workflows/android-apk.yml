@@ -1,0 +1,55 @@
+# Compila el APK de depuración en GitHub y lo deja como descarga (pestaña Actions -> el último
+# run -> Artifacts). Corre en cada push a main y a mano (Run workflow). El APK de depuración está
+# firmado con la clave de depuración: sirve para instalar y probar en un teléfono, no para Play Store.
+name: APK Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Dependencias
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Compilar la web y sincronizar con Android
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Compilar el APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MC-Digilibrary-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

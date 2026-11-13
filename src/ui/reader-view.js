@@ -37,6 +37,11 @@ export function createReaderView({ store }) {
   const zoomBox = $('zoom-controls');
   const zoomLabel = $('zoom-label');
   const ocr = createOcrController({ button: $('btn-ocr'), toast });
+  const modeBtn = $('btn-mode');
+  const MODE_KEY = 'mc-digilibrary.pdfMode'; // 'scroll' | 'paged'; sin valor = automático (más de 20 páginas -> hojas)
+  const HINT_KEY = 'mc-digilibrary.pagedHint';
+  const readPref = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const writePref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sin almacenamiento: no se recuerda */ } };
   const searchToggle = $('reader-search-toggle');
   const searchForm = $('reader-search');
   const searchInput = $('reader-search-input');
@@ -235,6 +240,17 @@ export function createReaderView({ store }) {
     searchToggle.focus();
   });
 
+  function showMode() {
+    modeBtn.textContent = viewer && viewer.getMode && viewer.getMode() === 'paged' ? 'Hojas' : 'Scroll';
+  }
+  modeBtn.addEventListener('click', () => {
+    if (!viewer || !viewer.setMode) return;
+    const next = viewer.getMode() === 'paged' ? 'scroll' : 'paged';
+    viewer.setMode(next);
+    writePref(MODE_KEY, next);
+    showMode();
+  });
+
   async function open(bookId) {
     const token = ++openToken;
     clearReaderSearch({ close: true });
@@ -257,8 +273,16 @@ export function createReaderView({ store }) {
       const highlights = store.interactionsOf(book.id).filter((i) => i.anchor);
       const ocrPages = content.kind === 'pdf' ? await ocr.cached(book.id) : null;
       if (token !== openToken) { viewer.destroy(); return; }
-      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0, ocr: ocrPages });
+      const orphans = await viewer.mount(content, { highlights, startBlock: book.lastBlock || 0, ocr: ocrPages, mode: readPref(MODE_KEY) || 'auto' });
       if (token !== openToken) { viewer.destroy(); return; }
+      modeBtn.classList.toggle('hidden', content.kind !== 'pdf');
+      if (content.kind === 'pdf') {
+        showMode();
+        if (viewer.getMode() === 'paged' && !readPref(HINT_KEY)) {
+          writePref(HINT_KEY, '1');
+          toast('Desliza o toca los bordes para pasar de hoja');
+        }
+      }
       if (content.kind === 'pdf') ocr.attach({ viewer, pdf: content.pdf, bookId: book.id, results: ocrPages });
       searchToggle.disabled = false;
       if (!viewer.hasText()) toast('El documento no tiene texto legible');
@@ -266,6 +290,7 @@ export function createReaderView({ store }) {
     } catch (e) {
       if (token !== openToken) return;
       ocr.detach();
+      modeBtn.classList.add('hidden');
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
       searchToggle.disabled = true;
@@ -296,6 +321,7 @@ export function createReaderView({ store }) {
       hideMenu();
       noteModal.classList.add('hidden');
       ocr.detach();
+      modeBtn.classList.add('hidden');
       if (viewer) { viewer.destroy(); viewer = null; }
       zoomBox.classList.add('hidden');
       searchToggle.disabled = true;

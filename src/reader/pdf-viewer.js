@@ -9,13 +9,14 @@
 // Limitaciones: no hay enlaces internos ni externos del PDF, formularios ni anotaciones del archivo.
 import { pageHasText } from '../ocr/ocr-words.js';
 import { pinchFactor, pinchMetrics } from './pinch.js';
-import { cleanQuote, fitScale, fractionRects, isPdfAnchor, makePdfAnchor, pageAt, rectStyle } from './pdf-geometry.js';
+import { clampPage, cleanQuote, fitPageScale, fitScale, fractionRects, isPdfAnchor, makePdfAnchor, pageAt, pageGesture, pagedRatio, rectStyle, resolveMode } from './pdf-geometry.js';
 
 const MARGIN = 8; // px a cada lado de la página
 const GAP = 10; // px entre páginas
 const MAX_DPR = 2;
 const MAX_CANVAS_SIDE = 4096; // límite de píxeles por lado: evita canvas gigantes al hacer zoom
 const THROTTLE_MS = 200;
+const TURN_MS = 440; // duración de pasar la hoja
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 4;
 
@@ -35,6 +36,13 @@ const CSS = `
 .pdf-page .textLayer span.reader-search-hit{background:rgba(255,154,40,.65);border-radius:2px}
 .pdf-page .textLayer span.reader-search-hit-active{outline:2px solid rgba(255,154,40,.9)}
 .pdf-page .textLayer.ocr .ocr-line{position:static}
+/* Hoja a hoja: una sola página visible, centrada; la actual (.cur) y sus vecinas ya dibujadas (.pre, ocultas) */
+.reader-host.pdf-mode.paged{overscroll-behavior:contain}
+.pdf-pages.paged{position:relative;display:block;padding:0;min-width:0;perspective:2400px}
+.pdf-pages.paged .pdf-page{position:absolute;margin:0;display:none;backface-visibility:hidden}
+.pdf-pages.paged .pdf-page.cur{display:block}
+.pdf-pages.paged .pdf-page.pre{display:block;visibility:hidden}
+.pdf-pages .turn-shade{position:absolute;pointer-events:none;background:linear-gradient(90deg,rgba(0,0,0,.45),rgba(0,0,0,0) 65%)}
 .pdf-page .textLayer ::selection{background:rgba(30,144,255,.35)}
 `;
 
@@ -103,6 +111,14 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
   let lib = null;
   let total = 0;
   let zoom = 1;
+  let mode = 'scroll'; // 'scroll' (todas las páginas en una columna) | 'paged' (una hoja a la vez)
+  let cur = 0; // página visible en modo hoja a hoja (0-based)
+  let turning = false;
+  let queuedGo = null;
+  let turnTarget = -1; // destino de la vuelta en curso (para encadenar toques rápidos)
+  let lastW = 0;
+  let lastH = 0;
+  let resizeTimer = 0;
   let pagesEl = null;
   let entries = []; // { n, wrap, w1, h1 (tamaño a escala 1), anno, canvas, text, task, painted, busy }
   let io = null;
@@ -122,7 +138,10 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   const on = (target, type, fn, opts) => { target.addEventListener(type, fn, opts); listeners.push(() => target.removeEventListener(type, fn, opts)); };
   const availWidth = () => Math.max(160, host.clientWidth - 2 * MARGIN);
-  const scaleOf = (e) => fitScale(availWidth(), e.w1, zoom);
+  const availHeight = () => Math.max(160, host.clientHeight - 2 * MARGIN);
+  const scaleOf = (e) => (mode === 'paged' ? fitPageScale(availWidth(), availHeight(), e.w1, e.h1, zoom) : fitScale(availWidth(), e.w1, zoom));
+  const near = (e) => Math.abs(e.n - 1 - cur) <= 1;
+  const clearSel = () => { const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges(); };
 
   function sizeEntry(e) {
     const s = scaleOf(e);
@@ -270,6 +289,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   /** observe() dispara el callback inicial: si la página está a la vista, se vuelve a pintar. */
   function retrigger(e) {
+    if (mode === 'paged') { if (near(e)) paint(e); return; } // sin observador: se pinta la actual y sus vecinas
     if (!io) return;
     io.unobserve(e.wrap);
     io.observe(e.wrap);
@@ -288,6 +308,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
   }
 
   function progress() {
+    if (mode === 'paged') return { ratio: pagedRatio(cur, total), block: cur, page: cur + 1, pages: total };
     const max = Math.max(1, host.scrollHeight - host.clientHeight);
     const ratio = Math.min(1, Math.max(0, host.scrollTop / max));
     const probe = host.scrollTop - pagesEl.offsetTop + host.clientHeight * 0.3;
@@ -297,8 +318,9 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   function boxes() {
     return entries
-      .filter((e) => e.wrap.isConnected)
-      .map((e) => { const r = e.wrap.getBoundingClientRect(); return { page: e.n, left: r.left, top: r.top, width: r.width, height: r.height }; });
+      .filter((e) => e.wrap.isConnected && (mode !== 'paged' || e.wrap.classList.contains('cur'))) // las vecinas ocultas se superponen a la actual
+      .map((e) => { const r = e.wrap.getBoundingClientRect(); return { page: e.n, left: r.left, top: r.top, width: r.width, height: r.height }; })
+      .filter((b) => b.width > 0 && b.height > 0); // en hoja a hoja las demás páginas no ocupan lugar
   }
 
   function selectionInside() {
@@ -321,6 +343,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   /** Reubica la vista en una página y una fracción de su alto, conservando lo que se estaba leyendo al cambiar el zoom. */
   function scrollToPage(idx, frac = 0) {
+    if (mode === 'paged') return goTo(idx, { animate: false }); // devuelve una promesa: findText la espera
     const e = entries[Math.max(0, Math.min(total - 1, idx))];
     if (e) host.scrollTop = e.wrap.offsetTop - pagesEl.offsetTop + frac * e.wrap.offsetHeight;
   }
@@ -375,7 +398,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
     activeSearchMatch = searchMatches[searchIndex];
     clearSearchHighlights();
     activeSearchMatch = searchMatches[searchIndex];
-    scrollToPage(activeSearchMatch.page - 1);
+    await scrollToPage(activeSearchMatch.page - 1);
     const entry = entries[activeSearchMatch.page - 1];
     if (entry) {
       await paint(entry);
@@ -394,16 +417,200 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
         const vp = (await pdf.getPage(n)).getViewport({ scale: 1 });
         if (Math.abs(vp.width - e.w1) > 0.5 || Math.abs(vp.height - e.h1) > 0.5) {
           const before = e.wrap.offsetHeight;
-          const aboveViewport = e.wrap.offsetTop + before <= host.scrollTop;
+          const aboveViewport = mode === 'scroll' && e.wrap.offsetTop + before <= host.scrollTop;
           e.w1 = vp.width;
           e.h1 = vp.height;
           sizeEntry(e);
           if (e.painted || e.busy) { invalidate(e); retrigger(e); } // ya estaba dibujada con el tamaño provisional
           if (aboveViewport) host.scrollTop += e.wrap.offsetHeight - before; // no mover lo que se está leyendo
+          if (mode === 'paged' && near(e)) layoutPaged();
         }
       } catch { /* esa página usa el tamaño de la primera */ }
       if (n % 25 === 0) await new Promise((r) => setTimeout(r, 0)); // cede el hilo para no congelar la UI
     }
+  }
+
+  // ------------------------------------------------------------------ hoja a hoja
+
+  const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const pxOf = (v) => parseFloat(v) || 0;
+
+  /** Coloca cada página visible (o vecina) centrada en el "escenario", que es al menos tan grande como el visor. */
+  function layoutPaged() {
+    const e = entries[cur];
+    if (!e || !pagesEl) return;
+    const w = pxOf(e.wrap.style.width);
+    const h = pxOf(e.wrap.style.height);
+    const stageW = Math.max(host.clientWidth, w + 2 * MARGIN);
+    const stageH = Math.max(host.clientHeight, h + 2 * MARGIN);
+    pagesEl.style.width = stageW + 'px';
+    pagesEl.style.height = stageH + 'px';
+    for (const x of entries) {
+      const isCur = x === e;
+      const isPre = !isCur && near(x);
+      x.wrap.classList.toggle('cur', isCur);
+      x.wrap.classList.toggle('pre', isPre);
+      if (isCur || isPre) {
+        x.wrap.style.left = Math.round((stageW - pxOf(x.wrap.style.width)) / 2) + 'px';
+        x.wrap.style.top = Math.round((stageH - pxOf(x.wrap.style.height)) / 2) + 'px';
+      }
+    }
+  }
+
+  /** Libera lo que ya no hace falta (solo se mantienen la actual y las vecinas) y adelanta las vecinas. */
+  function settlePaged() {
+    entries.forEach((x) => { if (!near(x) && (x.painted || x.canvas || x.busy)) invalidate(x); });
+    entries.forEach((x) => { if (near(x)) paint(x); });
+  }
+
+  /** Vuelve al origen de la página nueva: con zoom, arriba y centrada. */
+  function resetScrollPaged() {
+    host.scrollTop = 0;
+    host.scrollLeft = Math.max(0, (host.scrollWidth - host.clientWidth) / 2);
+  }
+
+  function showPage(idx) {
+    cur = idx;
+    layoutPaged();
+    resetScrollPaged();
+    settlePaged();
+    if (onProgress) onProgress(progress());
+  }
+
+  /**
+   * Pasa a la página `idx`. Si es la contigua y no hay "reducir movimiento", la hoja gira sobre el lomo
+   * (borde izquierdo): hacia adelante la actual se va y deja ver la siguiente; hacia atrás la anterior
+   * vuelve a cubrir la actual. Espera a que la de destino esté dibujada para no mostrar una hoja en blanco.
+   */
+  async function goTo(idx, { animate = true } = {}) {
+    if (!pagesEl || mode !== 'paged' || destroyed) return;
+    idx = clampPage(idx, total);
+    if (turning) { queuedGo = { idx, animate }; return; }
+    turnTarget = idx;
+    if (idx === cur) return;
+    turning = true;
+    const token = mountToken;
+    try {
+      clearSel();
+      const from = entries[cur];
+      const to = entries[idx];
+      // La página de destino se coloca oculta (.pre) y se pinta antes de mostrarla.
+      to.wrap.classList.add('pre');
+      layoutPaged();
+      to.wrap.style.left = from.wrap.style.left;
+      to.wrap.style.top = from.wrap.style.top;
+      await paint(to);
+      if (destroyed || token !== mountToken) return;
+      const adjacent = Math.abs(idx - cur) === 1;
+      if (animate && adjacent && !reducedMotion() && from.wrap.animate) {
+        await turnLeaf(from, to, idx > cur ? 1 : -1);
+        if (destroyed || token !== mountToken) return;
+      }
+      showPage(idx);
+    } finally {
+      turning = false;
+      turnTarget = -1;
+      const q = queuedGo;
+      queuedGo = null;
+      if (q && !destroyed) goTo(q.idx, { animate: q.animate });
+    }
+  }
+
+  async function turnLeaf(from, to, dir) {
+    const under = dir > 0 ? to : from; // la que queda abajo y se descubre / queda cubierta
+    const leaf = dir > 0 ? from : to; // la que gira
+    const shade = div('turn-shade');
+    shade.style.cssText = 'left:' + under.wrap.style.left + ';top:' + under.wrap.style.top + ';width:' + under.wrap.style.width + ';height:' + under.wrap.style.height + ';z-index:2';
+    pagesEl.appendChild(shade);
+    under.wrap.style.zIndex = '1';
+    under.wrap.style.visibility = 'visible';
+    leaf.wrap.style.zIndex = '3';
+    leaf.wrap.style.visibility = 'visible';
+    leaf.wrap.style.transformOrigin = 'left center';
+    const away = 'rotateY(-105deg)';
+    const opts = { duration: TURN_MS, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' };
+    const frames = dir > 0 ? [{ transform: 'rotateY(0deg)' }, { transform: away }] : [{ transform: away }, { transform: 'rotateY(0deg)' }];
+    const shadeFrames = dir > 0 ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: 1 }];
+    try {
+      leaf.wrap.style.transform = frames[0].transform; // posición inicial antes de arrancar (evita un parpadeo)
+      await Promise.all([leaf.wrap.animate(frames, opts).finished, shade.animate(shadeFrames, opts).finished]);
+    } catch { /* animación cancelada (se cerró el lector): se limpia igual */ }
+    for (const w of [leaf.wrap, under.wrap]) {
+      w.getAnimations && w.getAnimations().forEach((a) => a.cancel());
+      w.style.zIndex = w.style.visibility = w.style.transform = w.style.transformOrigin = '';
+    }
+    shade.remove();
+  }
+
+  // Toques seguidos se encadenan: cada uno parte del destino pendiente, no de la página que aún se ve.
+  const basePage = () => (queuedGo ? queuedGo.idx : turning && turnTarget >= 0 ? turnTarget : cur);
+  const next = () => goTo(basePage() + 1);
+  const prev = () => goTo(basePage() - 1);
+
+  function bindPagedInput() {
+    let g = null;
+    on(host, 'touchstart', (ev) => {
+      const t = ev.touches[0];
+      g = mode === 'paged' && ev.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: Date.now(), moved: false } : null;
+    }, { passive: true });
+    on(host, 'touchmove', (ev) => {
+      if (!g) return;
+      const t = ev.touches[0];
+      if (ev.touches.length !== 1) g = null;
+      else if (Math.hypot(t.clientX - g.x, t.clientY - g.y) > 10) g.moved = true;
+    }, { passive: true });
+    on(host, 'touchend', (ev) => {
+      const s0 = g;
+      g = null;
+      if (!s0 || mode !== 'paged' || selectionInside()) return; // con texto seleccionado no se pasa de hoja
+      const t = ev.changedTouches[0];
+      const r = host.getBoundingClientRect();
+      const act = pageGesture({ dx: t.clientX - s0.x, dy: t.clientY - s0.y, dt: Date.now() - s0.at, moved: s0.moved, relX: (t.clientX - r.left) / r.width, fit: zoom <= 1.02 });
+      if (act === 'next') next(); else if (act === 'prev') prev();
+    }, { passive: true });
+    on(document, 'keydown', (ev) => {
+      if (mode !== 'paged' || ev.ctrlKey || ev.metaKey || ev.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || '')) return;
+      if (ev.key === 'ArrowRight' || ev.key === 'PageDown') { ev.preventDefault(); next(); }
+      else if (ev.key === 'ArrowLeft' || ev.key === 'PageUp') { ev.preventDefault(); prev(); }
+    });
+  }
+
+  /** Cambia entre columna con scroll y hoja a hoja, conservando la página que se estaba leyendo. */
+  function applyMode(next) {
+    if (!pagesEl || next === mode) return mode;
+    const page = progress().block;
+    mode = next;
+    clearSel();
+    if (io) { io.disconnect(); io = null; }
+    entries.forEach((e) => {
+      e.wrap.classList.remove('cur', 'pre');
+      e.wrap.style.left = e.wrap.style.top = '';
+      sizeEntry(e);
+      invalidate(e);
+    });
+    pagesEl.classList.toggle('paged', mode === 'paged');
+    host.classList.toggle('paged', mode === 'paged');
+    pagesEl.style.width = pagesEl.style.height = '';
+    cur = clampPage(page, total);
+    if (mode === 'paged') { layoutPaged(); resetScrollPaged(); settlePaged(); }
+    else { observeAll(); scrollToPage(cur); }
+    if (onProgress) onProgress(progress());
+    return mode;
+  }
+
+  /** Cambios de tamaño del visor (girar el teléfono): se vuelve a ajustar y dibujar todo. */
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (destroyed || !pagesEl) return;
+      const w = host.clientWidth;
+      const h = host.clientHeight;
+      // El teclado del buscador cambia solo el alto: en columna eso no obliga a redibujar nada.
+      if (Math.abs(w - lastW) < 2 && (mode === 'scroll' || Math.abs(h - lastH) < 2)) return;
+      lastW = w; lastH = h;
+      entries.forEach((e) => { sizeEntry(e); invalidate(e); });
+      if (mode === 'paged') { layoutPaged(); resetScrollPaged(); settlePaged(); } else observeAll();
+    }, 150);
   }
 
   /**
@@ -461,6 +668,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
     if (!pagesEl || next === zoom) { if (onZoom) onZoom(zoom); return zoom; }
     const fx = focal ? focal.x : 0;
     const fy = focal ? focal.y : 0;
+    if (mode === 'paged') return applyZoomPaged(next, fx, fy, !!focal);
     const y = host.scrollTop + fy - pagesEl.offsetTop;
     const idx = pageAt(entries.map((e) => e.wrap.offsetTop - pagesEl.offsetTop), y);
     const e0 = entries[idx];
@@ -478,12 +686,38 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
     return zoom;
   }
 
+  /** Zoom en hoja a hoja: deja fijo el punto de la página que está bajo los dedos (o el centro). */
+  function applyZoomPaged(next, fx, fy, hasFocal) {
+    const e = entries[cur];
+    const left = pxOf(e.wrap.style.left);
+    const top = pxOf(e.wrap.style.top);
+    const w = Math.max(1, pxOf(e.wrap.style.width));
+    const h = Math.max(1, pxOf(e.wrap.style.height));
+    const px = hasFocal ? fx : host.clientWidth / 2;
+    const py = hasFocal ? fy : host.clientHeight / 2;
+    const rx = (host.scrollLeft + px - left) / w; // punto de la página, en fracciones
+    const ry = (host.scrollTop + py - top) / h;
+    zoom = next;
+    entries.forEach((x) => { sizeEntry(x); invalidate(x); });
+    layoutPaged();
+    const nl = pxOf(e.wrap.style.left);
+    const nt = pxOf(e.wrap.style.top);
+    host.scrollLeft = nl + rx * pxOf(e.wrap.style.width) - px;
+    host.scrollTop = nt + ry * pxOf(e.wrap.style.height) - py;
+    settlePaged();
+    if (onProgress) onProgress(progress());
+    if (onZoom) onZoom(zoom);
+    return zoom;
+  }
+
   function bindEvents() {
     on(host, 'scroll', () => {
       if (scrollTimer) return;
       scrollTimer = setTimeout(() => { scrollTimer = 0; if (!destroyed && onProgress) onProgress(progress()); }, THROTTLE_MS);
     }, { passive: true });
     bindPinch();
+    bindPagedInput();
+    on(window, 'resize', onResize);
     // En el celular no hay mouseup confiable: selectionchange cubre el arrastre de los manijas.
     on(document, 'selectionchange', () => {
       clearTimeout(selTimer);
@@ -493,7 +727,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
   return {
     /** content: { kind:'pdf', pdf, lib }. Devuelve las anotaciones que no se pudieron ubicar. */
-    async mount(content, { highlights = [], startBlock = 0, ocr: ocrPages = null } = {}) {
+    async mount(content, { highlights = [], startBlock = 0, ocr: ocrPages = null, mode: modePref = 'auto' } = {}) {
       this.destroy();
       destroyed = false;
       mountToken++;
@@ -505,7 +739,13 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
       total = pdf.numPages;
       host.classList.add('pdf-mode');
       host.innerHTML = '';
+      mode = resolveMode(modePref, total);
+      cur = clampPage(startBlock, total);
+      lastW = host.clientWidth;
+      lastH = host.clientHeight;
       pagesEl = div('pdf-pages');
+      pagesEl.classList.toggle('paged', mode === 'paged');
+      host.classList.toggle('paged', mode === 'paged');
       host.appendChild(pagesEl);
 
       const first = (await pdf.getPage(1)).getViewport({ scale: 1 });
@@ -525,8 +765,7 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
 
       const orphans = highlights.filter((h) => h.anchor && !addHighlight(h));
       bindEvents();
-      observeAll();
-      if (startBlock > 0) scrollToPage(startBlock);
+      if (mode === 'paged') { layoutPaged(); settlePaged(); } else { observeAll(); if (startBlock > 0) scrollToPage(startBlock); }
       if (onProgress) onProgress(progress());
       loadSizes(mountToken);
       return orphans;
@@ -549,11 +788,19 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
       clearSearchHighlights();
     },
     clearSelection() { const s = window.getSelection(); if (s) s.removeAllRanges(); },
-    setProgress(ratio) { host.scrollTop = ratio * Math.max(0, host.scrollHeight - host.clientHeight); },
+    setProgress(ratio) {
+      if (mode === 'paged') { goTo(Math.round(ratio * Math.max(0, total - 1)), { animate: false }); return; }
+      host.scrollTop = ratio * Math.max(0, host.scrollHeight - host.clientHeight);
+    },
     progress: () => (pagesEl ? progress() : { ratio: 0, block: 0, page: 1, pages: 0 }),
     blockCount: () => total,
     hasText: () => true, // no se sabe hasta pintar cada página; un PDF escaneado simplemente no deja seleccionar
     getZoom: () => zoom,
+    getMode: () => mode,
+    /** 'scroll' | 'paged'. Devuelve el modo resultante. */
+    setMode: (m) => applyMode(m === 'paged' ? 'paged' : 'scroll'),
+    next,
+    prev,
     /** Cambia el zoom (1 = ajustado al ancho) manteniendo la posición de lectura. */
     setZoom(z) { return applyZoom(z, null); },
     destroy() {
@@ -561,18 +808,24 @@ export function createPdfViewer({ host, onSelectionChange, onProgress, onZoom })
       mountToken++;
       clearTimeout(scrollTimer);
       clearTimeout(selTimer);
-      scrollTimer = selTimer = 0;
+      clearTimeout(resizeTimer);
+      scrollTimer = selTimer = resizeTimer = 0;
       listeners.splice(0).forEach((off) => off());
       if (io) { io.disconnect(); io = null; }
       entries.forEach(unpaint);
       entries = [];
       items.clear();
       ocr.clear();
-      host.classList.remove('pdf-mode');
+      host.classList.remove('pdf-mode', 'paged');
       if (pagesEl) { pagesEl.remove(); pagesEl = null; }
       if (pdf) { try { pdf.destroy(); } catch { /* ya liberado */ } pdf = null; }
       total = 0;
       zoom = 1;
+      mode = 'scroll';
+      cur = 0;
+      turning = false;
+      turnTarget = -1;
+      queuedGo = null;
       searchGeneration++;
       searchQuery = '';
       searchMatches = [];

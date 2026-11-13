@@ -74,6 +74,45 @@ export function fitScale(avail, pageWidth, zoom = 1) {
 }
 
 /**
+ * Escala para mostrar UNA página entera en pantalla (modo hoja a hoja): la menor de ajustar al ancho y
+ * al alto, para que se vea completa como la hoja de un libro. `zoom` 1 = página entera.
+ */
+export function fitPageScale(availW, availH, pageW, pageH, zoom = 1) {
+  if (!(pageW > 0) || !(pageH > 0) || !(availW > 0) || !(availH > 0)) return 1;
+  return Math.min(availW / pageW, availH / pageH) * Math.max(0.25, Math.min(5, zoom));
+}
+
+/** Índice de página acotado a 0..total-1 (0 si el total no es válido). */
+export function clampPage(idx, total) {
+  if (!(total > 0)) return 0;
+  const n = Math.round(Number(idx));
+  return Number.isFinite(n) ? Math.max(0, Math.min(total - 1, n)) : 0;
+}
+
+/** Modo de lectura según el usuario ('auto' | 'scroll' | 'paged') y el tamaño del documento. */
+export const PAGED_FROM_PAGES = 20; // más de 20 páginas -> hoja a hoja por defecto
+export function resolveMode(pref, totalPages) {
+  if (pref === 'scroll' || pref === 'paged') return pref;
+  return totalPages > PAGED_FROM_PAGES ? 'paged' : 'scroll';
+}
+
+/** Posición relativa (0..1) del avance en hoja a hoja: primera página 0, última 1. */
+export const pagedRatio = (idx, total) => (total > 1 ? idx / (total - 1) : 0);
+
+/**
+ * Qué hace un gesto táctil de un dedo en modo hoja a hoja: 'next' | 'prev' | null.
+ * Deslizar horizontal (solo con la página entera a la vista) o tocar el 20 % lateral.
+ */
+export function pageGesture({ dx, dy, dt, moved, relX, fit }) {
+  if (fit && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 600) return dx < 0 ? 'next' : 'prev';
+  if (!moved && dt < 300) {
+    if (relX < 0.2) return 'prev';
+    if (relX > 0.8) return 'next';
+  }
+  return null;
+}
+
+/**
  * Página que está en una posición de scroll. `tops[i]`/`heights[i]` son el borde superior y el alto
  * de la página i+1. Devuelve el índice (0-based) de la última página que empieza antes de `y`.
  */

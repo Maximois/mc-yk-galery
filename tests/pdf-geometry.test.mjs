@@ -77,3 +77,46 @@ test('exportación con anotaciones de PDF: orden por página y posición', () =>
   assert.ok(md.indexOf('primera') < md.indexOf('segunda') && md.indexOf('segunda') < md.indexOf('tercera'));
   assert.ok(md.includes('página 2') && md.includes('página 5'));
 });
+
+import { fitPageScale, clampPage, resolveMode, pagedRatio, pageGesture } from '../src/reader/pdf-geometry.js';
+
+test('fitPageScale: la página entera cabe (la menor de ancho y alto) y el zoom multiplica', () => {
+  assert.equal(fitPageScale(400, 800, 200, 200), 2); // limita el ancho
+  assert.equal(fitPageScale(400, 300, 200, 200), 1.5); // limita el alto
+  assert.equal(fitPageScale(400, 800, 200, 200, 2), 4);
+  assert.equal(fitPageScale(0, 800, 200, 200), 1);
+});
+
+test('clampPage acota e ignora basura', () => {
+  assert.equal(clampPage(-3, 10), 0);
+  assert.equal(clampPage(99, 10), 9);
+  assert.equal(clampPage(4.6, 10), 5);
+  assert.equal(clampPage(NaN, 10), 0);
+  assert.equal(clampPage(5, 0), 0);
+});
+
+test('resolveMode: más de 20 páginas -> hoja a hoja; la preferencia del usuario manda', () => {
+  assert.equal(resolveMode('auto', 20), 'scroll');
+  assert.equal(resolveMode('auto', 21), 'paged');
+  assert.equal(resolveMode(undefined, 300), 'paged');
+  assert.equal(resolveMode('scroll', 300), 'scroll');
+  assert.equal(resolveMode('paged', 3), 'paged');
+});
+
+test('pagedRatio', () => {
+  assert.equal(pagedRatio(0, 10), 0);
+  assert.equal(pagedRatio(9, 10), 1);
+  assert.equal(pagedRatio(0, 1), 0);
+});
+
+test('pageGesture: deslizar y tocar los bordes', () => {
+  const base = { dx: 0, dy: 0, dt: 100, moved: false, relX: 0.5, fit: true };
+  assert.equal(pageGesture({ ...base, dx: -120, moved: true }), 'next');
+  assert.equal(pageGesture({ ...base, dx: 120, moved: true }), 'prev');
+  assert.equal(pageGesture({ ...base, dx: -120, dy: 100, moved: true }), null); // más vertical que horizontal
+  assert.equal(pageGesture({ ...base, dx: -120, moved: true, fit: false }), null); // con zoom se desplaza, no se pasa de hoja
+  assert.equal(pageGesture({ ...base, relX: 0.1 }), 'prev');
+  assert.equal(pageGesture({ ...base, relX: 0.9 }), 'next');
+  assert.equal(pageGesture({ ...base, relX: 0.5 }), null); // centro: no hace nada (deja seleccionar)
+  assert.equal(pageGesture({ ...base, relX: 0.9, dt: 700 }), null); // pulsación larga: es una selección
+});

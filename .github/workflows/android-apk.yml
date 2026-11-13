@@ -28,7 +28,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # El runner ya trae el SDK de Android: solo se aceptan licencias y se asegura la plataforma que pide el proyecto.
+      - name: SDK de Android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Dependencias
         run: npm ci

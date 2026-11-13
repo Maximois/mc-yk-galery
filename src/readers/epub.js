@@ -65,6 +65,33 @@ export function readPackage(entries) {
   return { title: text('title'), author: text('creator'), spine };
 }
 
+/**
+ * Ruta de la imagen de portada dentro del ZIP, o null. Orden de confianza: propiedad `cover-image`
+ * (EPUB 3), `<meta name="cover">` (EPUB 2) y, como último recurso, una imagen del manifiesto con
+ * "cover" en el id o el nombre.
+ */
+export function findCoverPath(entries) {
+  try {
+    const container = entries['META-INF/container.xml'];
+    const root = container && byLocal(parseXml(dec(container)), 'rootfile')[0];
+    const opfPath = root && root.getAttribute('full-path');
+    if (!opfPath || !entries[opfPath]) return null;
+    const opf = parseXml(dec(entries[opfPath]));
+    const items = byLocal(opf, 'item');
+    const isImage = (it) => /^image\//.test(it.getAttribute('media-type') || '');
+    const pathOf = (it) => resolvePath(opfPath, it.getAttribute('href'));
+    const ok = (it) => it && isImage(it) && entries[pathOf(it)];
+    let hit = items.find((it) => /(^|\s)cover-image(\s|$)/.test(it.getAttribute('properties') || '') && ok(it));
+    if (!hit) {
+      const meta = byLocal(opf, 'meta').find((m) => m.getAttribute('name') === 'cover');
+      const id = meta && meta.getAttribute('content');
+      hit = items.find((it) => it.getAttribute('id') === id && ok(it));
+    }
+    if (!hit) hit = items.find((it) => ok(it) && /cover/i.test((it.getAttribute('id') || '') + ' ' + (it.getAttribute('href') || '')));
+    return hit ? pathOf(hit) : null;
+  } catch { return null; }
+}
+
 function inlineImage(img, chapterPath, entries) {
   const src = img.getAttribute('src') || img.getAttribute('xlink:href') || '';
   if (!src || /^(data:|https?:|\/\/)/i.test(src)) {

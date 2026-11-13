@@ -11,7 +11,10 @@ import { $ } from './lib/dom.js';
 import { createStore } from './data/store.js';
 import { createImporter } from './data/importer.js';
 import { preferencesStorage } from './platform/storage.js';
-import { bookPath, writeBookFile } from './platform/files.js';
+import { bookPath, writeBookFile, readBookFile, deleteBookFile, coverPath } from './platform/files.js';
+import { createCoverService } from './covers/service.js';
+import { extractCover, hasCoverExtractor } from './covers/extract.js';
+import { loadCore } from './readers/doc-core.js';
 import { installBackButton } from './platform/back-button.js';
 import { createRouter } from './ui/router.js';
 import { createLibraryView } from './ui/library-view.js';
@@ -41,6 +44,13 @@ function showFatal(error) {
 async function boot() {
   const store = createStore(preferencesStorage);
   const importer = createImporter({ store, files: { bookPath, writeBookFile } });
+  const covers = createCoverService({
+    store,
+    files: { readBookFile, writeBookFile, deleteBookFile, coverPath },
+    extract: extractCover,
+    hasExtractor: hasCoverExtractor,
+    loadCore
+  });
 
   // Las pantallas se crean con el router por referencia: las vistas lo usan al navegar.
   const routerRef = {
@@ -50,8 +60,8 @@ async function boot() {
   };
 
   const views = {
-    library: createLibraryView({ store, importer, router: routerRef }),
-    details: createDetailsView({ store, router: routerRef }),
+    library: createLibraryView({ store, importer, covers, router: routerRef }),
+    details: createDetailsView({ store, covers, router: routerRef }),
     reader: createReaderView({ store }),
     notebook: createNotebookView({ store })
   };
@@ -63,6 +73,7 @@ async function boot() {
 
   await store.load();
   router.reset('library');
+  covers.ensureAll(); // libros anteriores a las portadas: se generan de a una, en segundo plano
   createWelcomeScreen({
     root: $('welcome-screen'),
     onComplete: () => {

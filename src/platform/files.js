@@ -50,4 +50,5 @@ export async function writeTextFile(path, text) {
   await Filesystem.writeFile({ path, data: text, directory: Directory.Data, encoding: Encoding.UTF8, recursive: true });
 }
 
+export const coverPath = (bookId) => 'covers/' + bookId + '.jpg';
 export const ocrPath = (bookId) => 'ocr/' + bookId + '.json';

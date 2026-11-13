@@ -367,7 +367,8 @@ body {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  grid-auto-rows: 1fr; /* todas las filas del mismo alto: la tarjeta más alta marca el ritmo */
+  /* Filas al tamaño real de la tarjeta: con 'auto' y varias filas el grid usaba el mínimo y aplastaba las portadas. */
+  grid-auto-rows: max-content;
   gap: 16px;
   padding: 16px;
   align-content: start;
@@ -375,8 +376,7 @@ body {
 }
 
 .book-card {
-  min-width: 0;
-  height: 100%;
+  min-width: 0; /* las tarjetas de una misma fila se estiran a la más alta (align-items: stretch) */
   display: flex;
   flex-direction: column;
   background: var(--surface1);
@@ -395,6 +395,7 @@ body {
 
 .book-cover {
   position: relative;
+  flex: none; /* la portada no se encoge dentro de la tarjeta */
   width: 100%;
   aspect-ratio: 3/4;
   background: linear-gradient(160deg, var(--surface3) 0%, var(--surface2) 100%);

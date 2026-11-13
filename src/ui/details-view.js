@@ -4,10 +4,11 @@ import { emptyCoverHtml } from '../lib/cover.js';
 import { canRead } from '../readers/index.js';
 import { deleteBookFile, ocrPath } from '../platform/files.js';
 import { toast } from './toast.js';
+import { applyCover } from './library-view.js';
 
 const RECENT = 3;
 
-export function createDetailsView({ store, router }) {
+export function createDetailsView({ store, covers, router }) {
   const el = $('view-details');
   const body = $('book-details');
   const btnReader = $('btn-open-reader');
@@ -52,6 +53,7 @@ export function createDetailsView({ store, router }) {
           recentNotes() +
         '</div>' +
       '</div>';
+    applyCover(body.querySelector('.details-cover'), book, covers);
     btnReader.disabled = !readable;
     btnReader.textContent = readable
       ? (book.progress > 0 ? 'Continuar lectura' : 'Abrir Lector')
@@ -66,10 +68,13 @@ export function createDetailsView({ store, router }) {
   btnRemove.addEventListener('click', async () => {
     if (!book || !confirm('¿Eliminar "' + book.title + '" de la biblioteca? Se borran también sus notas y resaltados.')) return;
     const removed = await store.removeBook(book.id);
-    if (removed) { await deleteBookFile(removed.path); await deleteBookFile(ocrPath(removed.id)); } // sin esto el archivo quedaba huérfano ocupando espacio
+    if (removed) { await deleteBookFile(removed.path); await deleteBookFile(ocrPath(removed.id)); await covers.remove(removed.id); } // sin esto el archivo quedaba huérfano ocupando espacio
     toast('Libro eliminado');
     router.reset('library');
   });
+
+  // La portada se genera después de importar: si la ficha ya está abierta, se actualiza sola.
+  covers.onChange((id) => { if (book && book.id === id) { book = store.getBook(id) || book; applyCover(body.querySelector('.details-cover'), book, covers); } });
 
   return {
     el,
